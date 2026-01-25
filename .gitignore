@@ -1,0 +1,21 @@
+# --- Python 後端忽略清單 ---
+
+# 虛擬環境 (絕對不能上傳！)
+venv/
+env/
+.venv/
+
+# Python 快取檔 (垃圾檔案)
+__pycache__/
+*.py[cod]
+
+# 環境變數 (金鑰密碼)
+.env
+.env.local
+
+# VS Code 設定 (選用，通常不需上傳個人設定)
+.vscode/
+
+# 作業系統產生的垃圾檔
+.DS_Store
+Thumbs.db
