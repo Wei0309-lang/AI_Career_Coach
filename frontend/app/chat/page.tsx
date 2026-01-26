@@ -1,8 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import InputBox from "./InputBox";
+import ChatBody from "./chastBody";
+
 export default function Home() {
-  const [message, setMessage] = useState("等待連線中...")
+
+
+const [message, setMessage] = useState<string>("等待連線中...")
+
+const UserSend = (InputWebText:string) => {
+  console.log("收到訊息:", InputWebText);
+
+  setMessage(InputWebText);
+}
 
 
 const callBackend = async () => {
@@ -15,26 +26,18 @@ const callBackend = async () => {
   }
 }
 return (
-    <div>
+    <div className="min-h-screen flex flex-col bg-gray-700 left-15 p-10">
       {/* 顯示標題 */}
-      <h1 className="text-4xl font-bold mb-6 text-blue-600">
+      <h1 className=" flex text-4xl left-15 font-bold mb-6 text-gray-400">
         AI 職涯教練平台
       </h1>
       
-      {/* 顯示按鈕 */}
-      <button onClick={callBackend} className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-lg" >
-        呼叫後端 API
-      </button>
-
-      {/* 顯示變數 */}
-      <div className="mt-8 p-4 border border-gray-300 rounded-md bg-white">
-        <p className="text-xl">
-          後端回應：
-          <span className="font-bold text-green-600 ml-2">
-            {message}
-          </span>
-        </p>
-      </div>
+     
+      
+      <ChatBody/>
+      <InputBox onSend={UserSend}/>
+      
     </div>
+
   );
 }
