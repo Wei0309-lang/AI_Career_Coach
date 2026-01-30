@@ -10,7 +10,7 @@ export default function InputBox({onSend}: InputBoxProps) {
 
     const [input, setInput] = useState(""); {/* 輸入框的狀態 */}
 
-    const handleKeyDown = (e:React.KeyboardEvent) => { {/* 按下Enter鍵送出 */}
+    const handleKeyDown = (e:React.KeyboardEvent) => { {/* 按下Enter鍵後識別是否可傳送 */}
         if(e.key === 'Enter'){
 
             if(e.nativeEvent.isComposing) {   
@@ -19,7 +19,7 @@ export default function InputBox({onSend}: InputBoxProps) {
             
             e.preventDefault();
 
-            handleSend();
+            handleSend();{/* 呼叫傳送函式 */}
         }
     }
 
