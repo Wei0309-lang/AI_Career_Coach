@@ -1,52 +1,55 @@
 "use client";
+
 import { useState } from "react";
+import Form from 'react-bootstrap/Form';
+import Container from 'react-bootstrap/Container';
 
 interface InputBoxProps {
-    onSend: (message: string) => void;
-
+  onSend: (message: string) => void;
 }
 
-export default function InputBox({onSend}: InputBoxProps) {
+export default function InputBox({ onSend }: InputBoxProps) {
+  const [input, setInput] = useState("");
 
-    const [input, setInput] = useState(""); {/* 輸入框的狀態 */}
-
-    const handleKeyDown = (e:React.KeyboardEvent) => { {/* 按下Enter鍵後識別是否可傳送 */}
-        if(e.key === 'Enter'){
-
-            if(e.nativeEvent.isComposing) {   
-                return;
-            }
-            
-            e.preventDefault();
-
-            handleSend();{/* 呼叫傳送函式 */}
-        }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      // 保留這段：防止中文輸入法選字時誤傳送
+      if (e.nativeEvent.isComposing) {
+        return;
+      }
+      e.preventDefault();
+      handleSend();
     }
+  }
 
-
-    const handleSend = () => { {/* 空白例外處理、傳送、重設input */}
-
-        if(input.trim() === ""){
-            return;
-        }
-
-        if(onSend && input.trim() !== ""){
-            onSend(input.trim());
-            setInput("");
-        }
+  const handleSend = () => {
+    if (input.trim() === "") {
+      return;
     }
+    if (onSend && input.trim() !== "") {
+      onSend(input.trim());
+      setInput("");
+    }
+  }
 
   return (
-    <div className="fixed bottom-0 right-0 w-[1300px] p-4 rounded rounded-lg rounded-xl  border-gray-800 bg-gray-600  ">
-      <input
-        type="text"
-        placeholder="輸入您的訊息..."
-        className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-
-      />
+    // 1. fixed-bottom: 固定在視窗最下方
+    // 2. bg-secondary: 灰色背景 (類似原本的 bg-gray-600，若覺得太淺可改 bg-dark)
+    // 3. py-3: 上下內距
+    <div className="fixed-bottom bg-dark py-3">
+      {/* 使用 Container 讓輸入框置中且最大寬度*/}
+      <Container className="d-flex justify-content-center">
+  <Form.Control
+    type="text"
+    placeholder="輸入您的訊息..."
+    value={input}
+    onChange={(e) => setInput(e.target.value)}
+    onKeyDown={handleKeyDown}
+    className="rounded-pill border-0 shadow-sm px-4  bg-secondary text-white" 
+    
+    style={{ height: '50px', width: '100%', maxWidth: '800px' }} 
+  />
+</Container>
     </div>
   );
 }

@@ -1,40 +1,83 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-export default function MainButton() {
+import { Container, Row, Col, Card } from "react-bootstrap";
 
-      const features = [
-    { name: "AI模擬面試", href: "/chat", description: "與 AI 職涯教練進行對話，獲取職涯建議。", color:"blue" , img:"/InitialPageImg/AiInterview.png"  },
-    { name: "履歷健檢", href: "/check", description: "完成職涯測評，了解自己的職業傾向。", color:"green" , img:"/InitialPageImg/AiResume.png" },
-    { name: "職涯探索", href: "/resources", description: "獲取個性化的職涯資源推薦。", color:"red", img:"/InitialPageImg/AiCareer.jpg" },
+export default function MainButton() {
+  const features = [
+    {
+      name: "AI模擬面試",
+      href: "/chat",
+      description: "與 AI 職涯教練進行對話，獲取職涯建議。",
+      color: "primary", // blue -> primary
+      img: "/InitialPageImg/AiInterview.png",
+    },
+    {
+      name: "履歷健檢",
+      href: "/check",
+      description: "完成職涯測評，了解自己的職業傾向。",
+      color: "success", // green -> success
+      img: "/InitialPageImg/AiResume.png",
+    },
+    {
+      name: "職涯探索",
+      href: "/resources",
+      description: "獲取個性化的職涯資源推薦。",
+      color: "danger", // red -> danger
+      img: "/InitialPageImg/AiCareer.jpg",
+    },
   ];
 
-  const colorMap = {
-    blue:{text: "text-blue-600", border: "border-blue-500"},
-    green:{text: "text-green-600", border: "border-green-500"},
-    red:{text: "text-red-600", border: "border-red-500"},
-  }
-
-    return (
-        
-    <div className="mt-30 grid gap-8  md:grid-cols-3 max-w-6xl mx-auto">
+  return (
+    <Container className="my-5">
+      
+      <Row className="g-4 justify-content-center">
         {features.map((feature) => (
-          <Link
-            key={feature.name}
-            href={feature.href}
-            className={`text-center min-h-[320px] max-w-[500px] block p-6 rounded-lg shadow-lg hover:shadow-xl transition bg-white border-t-4 border-${feature.color}-500`}
-          >
-            <h2 className={`text-2xl font-semibold mb-4 text-${feature.color}-600` }>
-              {feature.name}
-            </h2>
-            <p className="text-gray-700">{feature.description}</p>
-            <Image
-              src={feature.img}
-              alt={feature.name} 
-              width={500}
-              height={500}
-              className="object-contain h-48 w-full"/>
-          </Link>
+          <Col md={4} key={feature.name}>
+            <Link href={feature.href} className="text-decoration-none">
+              <Card 
+                className={`h-100 shadow border-top border-4 border-${feature.color} hover-shadow`}
+                style={{ transition: "transform 0.2s" }}
+              >
+                <Card.Body className="text-center p-4">
+                  {/* 標題顏色 */}
+                  <h2 className={`h3 fw-bold text-${feature.color} mb-3`}>
+                    {feature.name}
+                  </h2>
+                  
+                  <Card.Text className="text-secondary mb-4">
+                    {feature.description}
+                  </Card.Text>
+
+                  {/* 圖片區域 */}
+                  <div style={{ position: "relative", height: "200px" }}>
+                    <Image
+                      src={feature.img}
+                      alt={feature.name}
+                      width={500}
+                      height={500}
+                      style={{ 
+                        width: "100%", 
+                        height: "100%", 
+                        objectFit: "contain" // 保持圖片比例
+                      }}
+                    />
+                  </div>
+                </Card.Body>
+              </Card>
+            </Link>
+          </Col>
         ))}
-      </div>
-    );
+      </Row>
+      
+      {/* 補充：為了讓 hover 效果更像原本的，我們可以加一點自訂樣式 */}
+      <style jsx global>{`
+        .hover-shadow:hover {
+          box-shadow: 0 1rem 3rem rgba(0,0,0,.175)!important;
+          transform: translateY(-5px);
+        }
+      `}</style>
+    </Container>
+  );
 }
