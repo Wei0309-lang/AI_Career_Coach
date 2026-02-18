@@ -2,6 +2,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Download the AI model from [here](https://huggingface.co/TWKrito/interview_simulate/tree/main)
+
 First, run the development server:
 
 ```bash
