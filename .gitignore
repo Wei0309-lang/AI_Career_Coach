@@ -8,6 +8,7 @@ env/
 # Python 快取檔 (垃圾檔案)
 __pycache__/
 *.py[cod]
+.vs/
 
 # 環境變數 (金鑰密碼)
 .env
@@ -19,3 +20,6 @@ __pycache__/
 # 作業系統產生的垃圾檔
 .DS_Store
 Thumbs.db
+
+# 模型檔案(過大，上傳了你會被GitHub爆破)
+models/

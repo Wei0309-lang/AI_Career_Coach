@@ -2,69 +2,72 @@
 
 import { useState } from "react";
 import InputBox from "./InputBox";
-import ChatBody from "./chatBody";
+import ChatBody from "./chatBody"; // 注意：請確認您的檔案名稱大小寫是否正確
 import Container from 'react-bootstrap/Container';
 
 interface ChatContent {
-  role: "user" | "Ai";
-  content: string;
+    role: "user" | "Ai";
+    content: string;
 }
 
 export default function Home() {
-  const [chatContents, setChatContents] = useState<ChatContent[]>([]);
-  const [loading, setLoading] = useState(false);
+    const [chatContents, setChatContents] = useState<ChatContent[]>([]);
+    const [loading, setLoading] = useState(false);
 
-  const handleSend = async (text: string) => {
-    // 1️⃣ 先加使用者訊息
-    setChatContents(prev => [...prev, { role: "user", content: text }]);
-    setLoading(true);
+    const handleSend = async (text: string) => {
+        // 1️⃣ 先加使用者訊息
+        setChatContents(prev => [...prev, { role: "user", content: text }]);
+        setLoading(true);
 
-    try {
-      // 確保你的後端 (Port 8001) 有打開喔！
-      const response = await fetch("http://localhost:8001/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
-      });
+        try {
+            // 【修改 1】建議使用 127.0.0.1 取代 localhost，避免 Windows 解析錯誤
+            const res = await fetch("http://127.0.0.1:8001/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: text }),
+            });
 
-      const data = await response.json();
+            if (!res.ok) {
+                throw new Error(`HTTP error! status: ${res.status}`);
+            }
 
-      // 2️⃣ 加 AI 回覆
-      setChatContents(prev => [
-        ...prev,
-        { role: "Ai", content: data.message },
-      ]);
-    } catch (error) {
-      setChatContents(prev => [
-        ...prev,
-        { role: "Ai", content: "無法連接到後端服務器，請檢查 Port 8001 是否運行中。" },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
+            const data = await res.json();
 
-  return (
-    // 1. min-vh-100: 高度至少 100% 視窗高度 (取代 min-h-screen)
-    // 2. d-flex flex-column: 讓內容垂直排列，這樣 ChatBody 才能長高 (取代 flex flex-col)
-    // 3. bg-dark: 深色背景 (取代 bg-gray-700)
-    <div className="min-vh-100 d-flex flex-column bg-dark">
-      
-      <Container className="p-4 flex-grow-1 d-flex flex-column">
-        {/* 標題區域 */}
-        {/* text-white-50: 半透明白色文字 (取代 text-gray-400) */}
-        <h1 className="display-5 fw-bold mb-4 text-white-50 text-center">
-          AI 職涯教練平台
-        </h1>
+            // 建議加入這行 Log，方便您在 F12 Console 檢查後端到底回傳了什麼
+            console.log("後端回傳資料:", data);
 
-        {/* 聊天內容區域 */}
-        {/* 把剩下的空間都分給 ChatBody */}
-        <ChatBody chatContents={chatContents} loading={loading} />
-        
-      </Container>
+            // 2️⃣ 加 AI 回覆
+            setChatContents(prev => [
+                ...prev,
+                {
+                    role: "Ai",
+                    // 【修改 2】這裡必須改成 data.response，因為您的 Python 是回傳 {"response": "..."}
+                    content: data.response
+                },
+            ]);
+        } catch (error) {
+            console.error("連線錯誤:", error);
+            setChatContents(prev => [
+                ...prev,
+                { role: "Ai", content: "無法連接到後端服務器，請檢查 Port 8001 是否運行中，並確認 Main.py 已啟動。" },
+            ]);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-      {/* 輸入框 (因為 InputBox 內部我們寫了 fixed-bottom，所以這裡直接放著就好) */}
-      <InputBox onSend={handleSend} />
-    </div>
-  );
+    return (
+        <div className="min-vh-100 d-flex flex-column bg-dark">
+            <Container className="p-4 flex-grow-1 d-flex flex-column">
+                <h1 className="display-5 fw-bold mb-4 text-white-50 text-center">
+                    AI 職涯教練平台
+                </h1>
+
+                <ChatBody chatContents={chatContents} loading={loading} />
+
+            </Container>
+
+            <InputBox onSend={handleSend} />
+        </div>
+    );
 }
