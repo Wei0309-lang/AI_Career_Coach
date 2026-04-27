@@ -2,7 +2,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, download the AI model from [here](https://huggingface.co/TWKrito/interview_simulate/tree/main)
+
+After downloading the model, place create a new folder in (..\AI_Career_Coach) named 'models' and put the file just downloaded in it.
+
+Then, run the development server:
 
 ```bash
 npm run dev

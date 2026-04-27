@@ -8,6 +8,7 @@ env/
 # Python 快取檔 (垃圾檔案)
 __pycache__/
 *.py[cod]
+.vs/
 
 # 本地端資料庫 (🌟 重要！確保組員之間不會互相覆蓋資料)
 app.db
@@ -39,3 +40,6 @@ yarn-error.log*
 # 作業系統產生的垃圾檔
 .DS_Store
 Thumbs.db
+
+# 模型檔案(過大，上傳了你會被GitHub爆破)
+models/
