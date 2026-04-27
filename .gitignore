@@ -9,11 +9,31 @@ env/
 __pycache__/
 *.py[cod]
 
+# 本地端資料庫 (🌟 重要！確保組員之間不會互相覆蓋資料)
+app.db
+*.sqlite3
+
 # 環境變數 (金鑰密碼)
 .env
 .env.local
 
-# VS Code 設定 (選用，通常不需上傳個人設定)
+# --- 前端 Next.js 忽略清單 (🌟 重要！) ---
+# 依賴套件 (容量超大，組員需自行 npm install)
+node_modules/
+
+# Next.js 編譯產生的檔案
+.next/
+out/
+build/
+
+# 前端環境變數與 Log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+
+# --- 編輯器與系統設定 ---
+# VS Code 設定
 .vscode/
 
 # 作業系統產生的垃圾檔

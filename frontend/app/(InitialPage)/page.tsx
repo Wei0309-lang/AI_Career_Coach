@@ -1,38 +1,50 @@
-// src/app/page.tsx (假設這是你的首頁)
-import Link from "next/link";
-import Container from 'react-bootstrap/Container'; // 引入容器
-import Header from "./Header";
+"use client";
+import { useState, useEffect } from "react";
+import AuthPage from "../AuthPage/AuthPage";
 import MainButton from "./MainButton";
 
 export default function Dashboard() {
-  return (
-    <>
-      <Header />
-      {/*  min-vh-100 (最小高度 100% 視窗)
-         2. bg-light ( 淺灰背景)
-         3.  py-5 (Bootstrap 間距最大通常到 5)
-      */}
-      <div className="min-vh-100 bg-primary-subtle px-4 py-5 ">
-        <Container>
-          {/* 1 display-1 (超大標題樣式)
-             2.  text-primary (主色調: 藍色)
-             3.  fw-bold (Font Weight Bold)
-          */}
-          <h1 className="display-1 fw-bold text-center text-primary">
-            您的AI職涯導師
-          </h1>
-          
-          <h2 className="h2 text-center text-secondary mt-4">
-            探索我們的功能，開始您的職涯旅程！
-          </h2>
-          
-          {/* 在 MainButton 裡面加上置中的樣式 */}
-          <div className="d-flex justify-content-center mt-5">
-             <MainButton />
-          </div>
-        </Container>
-      </div>
-    </>
-  )
-}
+  const [user, setUser] = useState<any>(null);
 
+  // 頁面載入時，檢查是否有舊的登入紀錄
+  useEffect(() => {
+    const savedUser = localStorage.getItem("interview_user");
+    if (savedUser) setUser(JSON.parse(savedUser));
+  }, []);
+
+  const handleLogin = (userData: any) => {
+    setUser(userData);
+    localStorage.setItem("interview_user", JSON.stringify(userData));
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("interview_user");
+  };
+
+  return (
+    // 🌟 這裡新增了最外層的 wrapper，設定最小高度 100vh 以及淺色背景
+    <div className="min-vh-100 bg-primary-subtle d-flex flex-column">
+      {/* 原本的 container 放在裡面，並微調一下間距 */}
+      <div className="container py-5 text-center flex-grow-1">
+        {!user ? (
+          <div className="d-flex flex-column align-items-center mt-5">
+            <h2 className="mb-4 text-dark">歡迎使用 AI 職涯導師，請先登入</h2>
+            <AuthPage onLoginSuccess={handleLogin} />
+          </div>
+        ) : (
+          <div className="mt-5">
+            <h1 className="display-4 text-primary fw-bold">您的 AI 職涯導師</h1>
+            <p className="lead mt-3 text-secondary">您好 {user.email}，準備好開始面試了嗎？</p>
+            <div className="mt-5">
+              <MainButton />
+            </div>
+            <button onClick={handleLogout} className="btn btn-outline-secondary btn-sm mt-5">
+              登出系統
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
