@@ -18,6 +18,9 @@ pnpm dev
 bun dev
 ```
 
+Test if modle is running successfully:
+-X POST http://127.0.0.1:8001/chat -H "Content-Type: application/json" -d "{\"message\": \"«¢Åo­±¸Õ©x\"}"
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
