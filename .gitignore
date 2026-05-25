@@ -43,3 +43,5 @@ Thumbs.db
 
 # 模型檔案(過大，上傳了你會被GitHub爆破)
 models/
+
+*.gguf

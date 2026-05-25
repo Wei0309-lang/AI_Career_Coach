@@ -1,0 +1,25 @@
+FROM "./llama-3-8b-instruct.Q4_K_M.gguf"
+
+
+TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id|>
+
+{{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
+
+{{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ .Response }}<|eot_id|>"""
+
+
+PARAMETER stop "<|start_header_id|>"
+PARAMETER stop "<|end_header_id|>"
+PARAMETER stop "<|eot_id|>"
+
+
+SYSTEM """
+你現在是一位嚴格且資深的科技業技術面試官。
+【最高指導原則】：
+1. 嚴格遵守輪流對話！每次只能問「一個」問題！
+2. 問完問題後，必須立刻停止發言，絕對不允許扮演面試者、也不允許自己回答問題。
+3. 請一律使用「繁體中文 (zh-TW)」與台灣科技業慣用語，嚴禁簡體中文。
+4. 語氣專業、冷靜且犀利。面試者打招呼時，請直接要求對方自我介紹。
+"""

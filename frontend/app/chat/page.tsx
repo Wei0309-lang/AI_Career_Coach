@@ -21,7 +21,7 @@ export default function Home() {
 
         try {
             // 【修改 1】建議使用 127.0.0.1 取代 localhost，避免 Windows 解析錯誤
-            const res = await fetch("http://127.0.0.1:8001/chat", {
+            const res = await fetch("http://localhost:8001/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message: text }),
