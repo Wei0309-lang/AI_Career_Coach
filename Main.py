@@ -56,6 +56,18 @@ def register(data: AuthCredential, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     return {"message": "註冊成功"}
+@app.post("/api/login")
+def login(data: AuthCredential, db: Session = Depends(get_db)):
+    user = db.query(Model.User).filter(Model.User.email == data.email).first()
+    
+    # 檢查帳號是否存在，以及密碼是否正確
+    if not user or not pwd_context.verify(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
+    
+    return {
+        "message": "登入成功",
+        "user": {"id": user.id, "email": user.email}
+    }
 
 # --- 4. AI 對話 API (嚴格面試官版 - 強制中文) ---
 @app.post("/chat")

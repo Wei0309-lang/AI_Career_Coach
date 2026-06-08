@@ -14,6 +14,7 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
     const url = isLogin ? "/api/login" : "/api/register";
     
     try {
+      console.log("準備打的網址是：", `http://localhost:8001${url}`);
       const response = await fetch(`http://localhost:8001${url}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
