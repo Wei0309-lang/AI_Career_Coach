@@ -13,7 +13,7 @@ export default function InputBox({ onSend }: InputBoxProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      // 保留這段：防止中文輸入法選字時誤傳送
+      // 防止中文輸入法選字時誤傳送
       if (e.nativeEvent.isComposing) {
         return;
       }
@@ -34,10 +34,10 @@ export default function InputBox({ onSend }: InputBoxProps) {
 
   return (
     // 1. fixed-bottom: 固定在視窗最下方
-    // 2. bg-secondary: 灰色背景 (類似原本的 bg-gray-600，若覺得太淺可改 bg-dark)
-    // 3. py-3: 上下內距
+    // 2. bg-secondary: 灰色背景 
+    // 3. py-3:上下內距
     <div className="fixed-bottom bg-dark py-3">
-      {/* 使用 Container 讓輸入框置中且最大寬度*/}
+      {/* 輸入框置中、最大寬度*/}
       <Container className="d-flex justify-content-center">
   <Form.Control
     type="text"

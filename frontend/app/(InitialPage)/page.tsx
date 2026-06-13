@@ -23,9 +23,9 @@ export default function Dashboard() {
   };
 
   return (
-    // 🌟 這裡新增了最外層的 wrapper，設定最小高度 100vh 以及淺色背景
+    //  新增最外層的 wrapper，設定最小高度 100vh 及淺色背景
     <div className="min-vh-100 bg-primary-subtle d-flex flex-column">
-      {/* 原本的 container 放在裡面，並微調一下間距 */}
+      {/* 原本的 container 放在裡面，並微調間距 */}
       <div className="container py-5 text-center flex-grow-1">
         {!user ? (
           <div className="d-flex flex-column align-items-center mt-5">

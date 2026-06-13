@@ -33,7 +33,7 @@ export default function Home() {
 
             const data = await res.json();
 
-            // 建議加入這行 Log，方便您在 F12 Console 檢查後端到底回傳了什麼
+            // Log，F12 Console可檢查後端到底回傳了什麼
             console.log("後端回傳資料:", data);
 
             // 2️⃣ 加 AI 回覆
@@ -41,7 +41,6 @@ export default function Home() {
                 ...prev,
                 {
                     role: "Ai",
-                    // 【修改 2】這裡必須改成 data.response，因為您的 Python 是回傳 {"response": "..."}
                     content: data.response
                 },
             ]);

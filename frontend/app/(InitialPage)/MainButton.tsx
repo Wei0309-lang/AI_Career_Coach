@@ -71,7 +71,7 @@ export default function MainButton() {
         ))}
       </Row>
       
-      {/* 補充：為了讓 hover 效果更像原本的，我們可以加一點自訂樣式 */}
+      {/* 為了讓 hover 效果更像原本的，加自訂樣式 */}
       <style jsx global>{`
         .hover-shadow:hover {
           box-shadow: 0 1rem 3rem rgba(0,0,0,.175)!important;

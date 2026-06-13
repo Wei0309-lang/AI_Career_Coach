@@ -7,11 +7,11 @@ interface ChatContent {
     content: string;
 }
 
-// 🛡️ Typewriter (打字機元件) - 強制切片版
+// Typewriter (打字機元件) - 強制切片，防止插件亂改
 const Typewriter = ({ text, speed }: { text: string, speed?: number }) => {
     const [displayedText, setDisplayedText] = useState("");
 
-    // 這裡計算速度：如果有傳 speed 就用，沒傳就自動判斷 (字多跑得快)
+    // 這裡計算速度：如果有傳 speed 就用，沒傳就自動判斷
     const typingSpeed = speed || (text.length > 50 ? 10 : 30);
 
     useEffect(() => {
@@ -19,7 +19,7 @@ const Typewriter = ({ text, speed }: { text: string, speed?: number }) => {
         setDisplayedText(""); // 開始前先清空
 
         const intervalId = setInterval(() => {
-            // 💡 關鍵修改：使用 slice (切片) 而不是 append (累加)
+            // 關鍵修改：使用 slice (切片) 而不是 append (累加)
             // 這會強制文字等於原始資料的前 N 個字，就算插件亂改也會被這個強制修正回來
             setDisplayedText(text.slice(0, currentIndex + 1));
 
@@ -34,8 +34,8 @@ const Typewriter = ({ text, speed }: { text: string, speed?: number }) => {
         return () => clearInterval(intervalId);
     }, [text, typingSpeed]);
 
-    // 🛡️ 加上 translate="no" 和 className="notranslate" 
-    // 這是給 Google/Edge 翻譯插件看的，叫它們不要碰這裡
+    
+    // 給 Google/Edge 它們不要碰這裡
     return (
         <span className="notranslate" translate="no">
             {displayedText}
@@ -65,9 +65,9 @@ export default function ChatBody({ chatContents, loading }: { chatContents: Chat
                         className={`shadow-sm ${msg.role === 'user' ? 'bg-primary text-white' : 'bg-light text-dark'}`}
                         style={{ maxWidth: '75%', borderRadius: '15px' }}
                     >
-                        {/* 🛡️ 在外層也加上防護罩，雙重保險 */}
+                        {/* 外層防護，*/}
                         <Card.Body className="p-3 notranslate" translate="no">
-                            {/* 只有最新的一則 AI 訊息才使用打字機，其他的直接顯示以節省效能 */}
+                            {/* only最新的一則 AI 訊息才使用打字機，其他直接顯示節省效能 */}
                             {msg.role === 'Ai' && index === chatContents.length - 1 ? (
                                 <Typewriter text={msg.content} />
                             ) : (

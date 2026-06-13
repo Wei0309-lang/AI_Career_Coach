@@ -7,6 +7,7 @@ from ollama import AsyncClient  # 載入 Ollama 非同步套件
 import uvicorn
 import Model
 from Database import SessionLocal, engine
+import os
 
 # 自動建立資料表
 Model.Base.metadata.create_all(bind=engine)
@@ -24,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 3. 定義資料格式
+# 定義資料格式
 class AuthCredential(BaseModel):
     email: str
     password: str
@@ -93,15 +94,16 @@ async def chat_endpoint(request: ChatRequest):
     enforced_user_message = f"{user_message}\n\n(系統提示：請務必只使用繁體中文扮演面試官回覆)"
 
     try:
-        client = AsyncClient(host='http://127.0.0.1:11434')
+        ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        client = AsyncClient(host=ollama_host)
         
         response = await client.chat(
             model=model_name,
             messages=[
-                # 🌟 修復核心 A：加上 role="system"，把面試官的大腦設定灌進去！
+                # 修復核心 A：加上 role="system"，把面試官大腦設定灌進去！
                 {"role": "system", "content": system_prompt},
                 
-                # 🌟 修復核心 B：這裡要改成 enforced_user_message，把加料版的訊息傳出去！
+                # 修復核心 B：這裡要改成 enforced_user_message，把加料的訊息傳出去！
                 {"role": "user", "content": enforced_user_message} 
             ],
             options={
