@@ -20,8 +20,10 @@ export default function Home() {
         setLoading(true);
 
         try {
-            // 【修改 1】建議使用 127.0.0.1 取代 localhost，避免 Windows 解析錯誤
-            const res = await fetch("http://localhost:8001/chat", {
+            // 🌟 【關鍵修改】優先讀取 Vercel 上的環境變數，如果沒有才用 localhost
+            const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+
+            const res = await fetch(`${BACKEND_URL}/chat`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message: text }),

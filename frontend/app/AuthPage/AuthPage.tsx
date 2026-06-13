@@ -14,11 +14,13 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
     const url = isLogin ? "/api/login" : "/api/register";
     
     try {
-      console.log("準備打的網址是：", `http://localhost:8001${url}`);
-      const response = await fetch(`http://localhost:8001${url}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+
+      console.log("準備打的網址是：", `${BACKEND_URL}${url}`);
+      const response = await fetch(`${BACKEND_URL}${url}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
