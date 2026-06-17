@@ -31,7 +31,8 @@ bun dev
 ```
 Frontend(launch cmd in ..\AI_Career_Coach\frontend):
 
-```uvicorn Main:app --reload --port 8000
+```bush
+uvicorn Main:app --reload --port 8000
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
