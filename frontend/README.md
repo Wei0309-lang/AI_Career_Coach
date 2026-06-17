@@ -2,11 +2,21 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, download the AI model from [here](https://huggingface.co/TWKrito/interview_simulate/tree/main)
+## 1st: deploy the AI model
+Download the AI model from [here](https://huggingface.co/TWKrito/interview_simulate/tree/main)
+After downloading the model. Create a new folder in (..\AI_Career_Coach) named 'models' and put the file just downloaded in it.
 
-After downloading the model, place create a new folder in (..\AI_Career_Coach) named 'models' and put the file just downloaded in it.
+Then donwload Ollama from [here](https://ollama.com/download) and install it. 
+Run the following command in file path (..\AI_Career_Coach\models) to import the model to PC:
+```ollama create my-career-coach -f Modelfile
+```
 
-Then, run the development server:
+## 2nd, install the dependencies:
+```npm install
+```
+
+## 3rd, run the development server:
+Backend(launch cmd in ..\AI_Career_Coach):
 
 ```bash
 npm run dev
@@ -16,6 +26,10 @@ yarn dev
 pnpm dev
 # or
 bun dev
+```
+Frontend(launch cmd in ..\AI_Career_Coach\frontend):
+
+```uvicorn Main:app --reload --port 8000
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
