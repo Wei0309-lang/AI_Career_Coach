@@ -8,11 +8,13 @@ After downloading the model. Create a new folder in (..\AI_Career_Coach) named '
 
 Then donwload Ollama from [here](https://ollama.com/download) and install it. 
 Run the following command in file path (..\AI_Career_Coach\models) to import the model to PC:
-```ollama create my-career-coach -f Modelfile
+```bash
+ollama create my-career-coach -f Modelfile
 ```
 
 ## 2nd, install the dependencies:
-```npm install
+```bash
+npm install
 ```
 
 ## 3rd, run the development server:
