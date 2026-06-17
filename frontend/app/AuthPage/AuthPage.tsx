@@ -14,7 +14,7 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
     const url = isLogin ? "/api/login" : "/api/register";
     
     try {
-      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
       console.log("準備打的網址是：", `${BACKEND_URL}${url}`);
       const response = await fetch(`${BACKEND_URL}${url}`, {

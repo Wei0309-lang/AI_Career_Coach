@@ -48,8 +48,6 @@ export default function Home() {
         setLoading(true);
 
         try {
-            // 🌟 【關鍵修改】優先讀取 Vercel 上的環境變數，如果沒有才用 localhost
-            const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
             // 優先讀取環境變數，如果沒有才用 localhost
             const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
