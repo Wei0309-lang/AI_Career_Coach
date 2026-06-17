@@ -4,8 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from passlib.context import CryptContext
-from ollama import AsyncClient  # 載入 Ollama 非同步套件
-from google import genai       # 載入 Gemini 套件（整合自 Huang 分支）
+from ollama import AsyncClient
+from google import genai
 import uvicorn
 import Model
 from Database import SessionLocal, engine
@@ -17,39 +17,31 @@ from email.mime.text import MIMEText
 # 自動建立資料表
 Model.Base.metadata.create_all(bind=engine)
 
-# 1. 初始化 FastAPI
 app = FastAPI()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# 🌟 初始化 Gemini 用戶端
 gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
-# 2. 🌟 核心修正：設定明確的 CORS 允許來源清單
-# 當 allow_credentials=True 時，不可使用 ["*"]，必須列出精確的前端網址
-origins = [
-    "http://localhost:3000",                          # 本地開發 Next.js 網址
-    "https://ai-career-coach-gray-iota.vercel.app"    # 您的 Vercel 線上正式網址 (結尾請勿加斜線 /)
-]
-
+# 🌟 核心修正 1：升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://ai-career-coach-gray-iota.vercel.app"
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app", # 允許任何 vercel.app 結尾的來源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 定義資料格式
 class AuthCredential(BaseModel):
     email: str
     password: str
 
-# 🌟 升級：ChatRequest 加上 user_id，以便 AI 辨識身分並讀取記憶與履歷
 class ChatRequest(BaseModel):
     user_id: str
     message: str
 
-# 🌟 新增：履歷上傳資料格式
 class ResumeData(BaseModel):
     user_id: str
     fullName: str
@@ -63,6 +55,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# 🌟 核心修正 2：新增「重置資料庫」的 API (用來解決 f405 舊欄位衝突)
+@app.get("/api/reset-db")
+def reset_database():
+    try:
+        # 這會強制刪除舊有的資料表，並依照最新的 Model.py 重新建立完整欄位
+        Model.Base.metadata.drop_all(bind=engine)
+        Model.Base.metadata.create_all(bind=engine)
+        return {"message": "✅ 資料庫已成功重置更新！請回到前端重新註冊帳號。"}
+    except Exception as e:
+        return {"message": f"❌ 重置失敗: {str(e)}"}
 
 
 # 非同步寄送驗證信件函數
