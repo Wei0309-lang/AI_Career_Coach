@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, Boolean
 import uuid
 from Database import Base
 
@@ -10,4 +10,6 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     password_hash = Column(String)
     
-    # 未來你可以繼續加：nickname = Column(String) 等等
+    # 🌟 新增：信件驗證相關欄位
+    is_verified = Column(Boolean, default=False, nullable=False)
+    verification_token = Column(String, unique=True, index=True, nullable=True)

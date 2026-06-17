@@ -31,7 +31,8 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
           sessionStorage.setItem("user", JSON.stringify(data.user));
           onLoginSuccess(data.user);
         } else {
-          alert("註冊成功，請登入");
+          // 🌟 核心修正：將寫死的文字改為讀取後端發信成功的引導訊息
+          alert(data.message || "註冊成功，請至信箱啟用帳號！");
           setIsLogin(true);
         }
       } else {
