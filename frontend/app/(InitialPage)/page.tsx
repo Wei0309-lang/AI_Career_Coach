@@ -5,27 +5,39 @@ import MainButton from "./MainButton";
 
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
+  const [checking, setChecking] = useState(true);
 
-  // 頁面載入時，檢查是否有舊的登入紀錄
+  // 頁面載入時，檢查是否有憑證（統一改為 sessionStorage）
   useEffect(() => {
-    const savedUser = localStorage.getItem("interview_user");
-    if (savedUser) setUser(JSON.parse(savedUser));
+    const savedUser = sessionStorage.getItem("user");
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+    setChecking(false);
   }, []);
 
   const handleLogin = (userData: any) => {
     setUser(userData);
-    localStorage.setItem("interview_user", JSON.stringify(userData));
+    // 這裡由 AuthPage 寫入 sessionStorage，但保險起見這裡也同步確保存在
+    sessionStorage.setItem("user", JSON.stringify(userData));
   };
 
   const handleLogout = () => {
     setUser(null);
-    localStorage.removeItem("interview_user");
+    // 🌟 核心修正：確實清除對話頁面檢查的憑證
+    sessionStorage.removeItem("user");
   };
 
+  if (checking) {
+    return (
+      <div className="min-vh-100 bg-primary-subtle d-flex justify-content-center align-items-center">
+        <div className="text-dark">載入中...</div>
+      </div>
+    );
+  }
+
   return (
-    //  新增最外層的 wrapper，設定最小高度 100vh 及淺色背景
     <div className="min-vh-100 bg-primary-subtle d-flex flex-column">
-      {/* 原本的 container 放在裡面，並微調間距 */}
       <div className="container py-5 text-center flex-grow-1">
         {!user ? (
           <div className="d-flex flex-column align-items-center mt-5">
