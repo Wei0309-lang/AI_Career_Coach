@@ -18,15 +18,17 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
 
       console.log("準備打的網址是：", `${BACKEND_URL}${url}`);
       const response = await fetch(`${BACKEND_URL}${url}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
         if (isLogin) {
+          // 登入成功時，將使用者資料寫入記錄中
+          sessionStorage.setItem("user", JSON.stringify(data.user));
           onLoginSuccess(data.user);
         } else {
           alert("註冊成功，請登入");
