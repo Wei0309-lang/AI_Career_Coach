@@ -129,6 +129,20 @@ def register(data: AuthCredential, background_tasks: BackgroundTasks, db: Sessio
     background_tasks.add_task(send_verification_email, data.email, verification_token)
     return {"message": "註冊成功！請檢查您的信箱並點擊驗證連結完成開通。"}
 
+# 🌟 新增：讀取現有履歷資料的 API
+@app.get("/api/resume/{user_id}")
+def get_resume(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(Model.User).filter(Model.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="找不到使用者")
+    
+    # 將資料庫中的內容回傳給前端，若為 None 則給予空字串避免前端 input 報錯
+    return {
+        "fullName": user.full_name or "",
+        "summary": user.summary or "",
+        "skills": user.skills or "",
+        "experience": user.experience or ""
+    }
 
 # 驗證信箱端點
 @app.get("/api/verify", response_class=HTMLResponse)

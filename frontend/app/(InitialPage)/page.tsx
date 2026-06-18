@@ -7,7 +7,6 @@ export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
   const [checking, setChecking] = useState(true);
 
-  // 頁面載入時，檢查是否有憑證（統一改為 sessionStorage）
   useEffect(() => {
     const savedUser = sessionStorage.getItem("user");
     if (savedUser) {
@@ -18,13 +17,11 @@ export default function Dashboard() {
 
   const handleLogin = (userData: any) => {
     setUser(userData);
-    // 這裡由 AuthPage 寫入 sessionStorage，但保險起見這裡也同步確保存在
     sessionStorage.setItem("user", JSON.stringify(userData));
   };
 
   const handleLogout = () => {
     setUser(null);
-    // 🌟 核心修正：確實清除對話頁面檢查的憑證
     sessionStorage.removeItem("user");
   };
 
@@ -48,9 +45,12 @@ export default function Dashboard() {
           <div className="mt-5">
             <h1 className="display-4 text-primary fw-bold">您的 AI 職涯導師</h1>
             <p className="lead mt-3 text-secondary">您好 {user.email}，準備好開始面試了嗎？</p>
+            
+            {/* 畫面中央的功能按鈕群組，履歷健檢已內嵌於此元件內部 */}
             <div className="mt-5">
               <MainButton />
             </div>
+
             <button onClick={handleLogout} className="btn btn-outline-secondary btn-sm mt-5">
               登出系統
             </button>

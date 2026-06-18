@@ -19,7 +19,7 @@ export default function ResumePage() {
     experience: "",
   });
 
-  // 🌟 安全守衛：檢查是否已登入
+  // 安全守衛與初始化歷史資料
   useEffect(() => {
     const storedUser = sessionStorage.getItem("user");
     if (!storedUser) {
@@ -30,6 +30,9 @@ export default function ResumePage() {
         if (user && user.id) {
           setUserId(user.id);
           setIsAuth(true);
+          
+          // 當確認使用者登入後，立刻去後端撈取歷史履歷資料
+          fetchExistingResume(user.id);
         } else {
           router.replace("/");
         }
@@ -39,6 +42,27 @@ export default function ResumePage() {
     }
   }, [router]);
 
+  // 向後端 API 撈取歷史資料的函式
+  const fetchExistingResume = async (id: string) => {
+    try {
+      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+      const response = await fetch(`${BACKEND_URL}/api/resume/${id}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        // 將撈到的舊資料直接覆蓋到表單狀態中，讓輸入框直接呈現
+        setFormData({
+          fullName: data.fullName,
+          summary: data.summary,
+          skills: data.skills,
+          experience: data.experience,
+        });
+      }
+    } catch (err) {
+      console.error("❌ 無法載入歷史履歷資料:", err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -47,7 +71,6 @@ export default function ResumePage() {
     try {
       const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
       
-      // 呼叫後端 /api/resume 儲存資料並獲取 Gemini 建議
       const response = await fetch(`${BACKEND_URL}/api/resume`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -90,12 +113,12 @@ export default function ResumePage() {
         </div>
         
         <p className="text-muted mb-4">
-          請填寫以下資訊。AI 面試官將會根據您的專業技能與經歷，為您量身打造專屬的面試情境！
+          此頁面已串接您的個人檔案。您可以隨時查看、調整或更新您的經歷，AI 面試官將即時採用最新內容！
         </p>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
-            <label className="form-label fw-bold">1. 姓名 (Full Name)</label>
+            <label className="form-label fw-bold text-dark">1. 姓名 (Full Name)</label>
             <input
               type="text"
               className="form-control"
@@ -107,7 +130,7 @@ export default function ResumePage() {
           </div>
 
           <div className="mb-3">
-            <label className="form-label fw-bold">2. 個人簡介 (Summary)</label>
+            <label className="form-label fw-bold text-dark">2. 個人簡介 (Summary)</label>
             <textarea
               className="form-control"
               rows={3}
@@ -119,7 +142,7 @@ export default function ResumePage() {
           </div>
 
           <div className="mb-3">
-            <label className="form-label fw-bold">3. 專業技能 (Skills)</label>
+            <label className="form-label fw-bold text-dark">3. 專業技能 (Skills)</label>
             <textarea
               className="form-control"
               rows={3}
@@ -131,7 +154,7 @@ export default function ResumePage() {
           </div>
 
           <div className="mb-4">
-            <label className="form-label fw-bold">4. 工作/專案經歷 (Experience)</label>
+            <label className="form-label fw-bold text-dark">4. 工作/專案經歷 (Experience)</label>
             <textarea
               className="form-control"
               rows={5}
@@ -147,7 +170,7 @@ export default function ResumePage() {
             className="btn btn-primary w-100 py-2 fw-bold"
             disabled={loading}
           >
-            {loading ? "💾 儲存中並呼叫 AI 健檢..." : "💾 儲存履歷並獲取 AI 健檢建議"}
+            {loading ? "💾 儲存中並呼叫 AI 健檢..." : "💾 更新履歷並獲取最新 AI 健檢建議"}
           </button>
         </form>
 

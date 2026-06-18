@@ -1,83 +1,39 @@
 "use client";
-
-import Image from "next/image";
-import Link from "next/link";
-import { Container, Row, Col, Card } from "react-bootstrap";
+import React from "react";
+import { useRouter } from "next/navigation"; // 🌟 新增：引入路由套件
 
 export default function MainButton() {
-  const features = [
-    {
-      name: "AI模擬面試",
-      href: "/chat",
-      description: "與 AI 職涯教練進行對話，獲取職涯建議。",
-      color: "primary", // blue -> primary
-      img: "/InitialPageImg/AiInterview.png",
-    },
-    {
-      name: "履歷健檢",
-      href: "/check",
-      description: "完成職涯測評，了解自己的職業傾向。",
-      color: "success", // green -> success
-      img: "/InitialPageImg/AiResume.png",
-    },
-    {
-      name: "職涯探索",
-      href: "/resources",
-      description: "獲取個性化的職涯資源推薦。",
-      color: "danger", // red -> danger
-      img: "/InitialPageImg/AiCareer.jpg",
-    },
-  ];
+  const router = useRouter(); // 🌟 新增：初始化路由
 
   return (
-    <Container className="my-5">
+    <div className="d-flex flex-column flex-md-row justify-content-center gap-4 max-w-4xl mx-auto px-3">
       
-      <Row className="g-4 justify-content-center">
-        {features.map((feature) => (
-          <Col md={4} key={feature.name}>
-            <Link href={feature.href} className="text-decoration-none">
-              <Card 
-                className={`h-100 shadow border-top border-4 border-${feature.color} hover-shadow`}
-                style={{ transition: "transform 0.2s" }}
-              >
-                <Card.Body className="text-center p-4">
-                  {/* 標題顏色 */}
-                  <h2 className={`h3 fw-bold text-${feature.color} mb-3`}>
-                    {feature.name}
-                  </h2>
-                  
-                  <Card.Text className="text-secondary mb-4">
-                    {feature.description}
-                  </Card.Text>
+      {/* 第一個按鈕：AI 模擬面試 */}
+      <div className="card shadow-sm border-0 flex-fill bg-white p-4 text-center rounded-4">
+        <div className="fs-1 mb-2">🤖</div>
+        <h4 className="fw-bold text-dark">AI 模擬面試</h4>
+        <p className="text-muted small mb-4">由資深技術面試官進行拷問，深度評估您的底層原理實力。</p>
+        <button 
+          onClick={() => router.push("/chat")} 
+          className="btn btn-primary fw-bold w-100 py-2 rounded-3"
+        >
+          開始模擬面試
+        </button>
+      </div>
 
-                  {/* 圖片區域 */}
-                  <div style={{ position: "relative", height: "200px" }}>
-                    <Image
-                      src={feature.img}
-                      alt={feature.name}
-                      width={500}
-                      height={500}
-                      style={{ 
-                        width: "100%", 
-                        height: "100%", 
-                        objectFit: "contain" // 保持圖片比例
-                      }}
-                    />
-                  </div>
-                </Card.Body>
-              </Card>
-            </Link>
-          </Col>
-        ))}
-      </Row>
-      
-      {/* 為了讓 hover 效果更像原本的，加自訂樣式 */}
-      <style jsx global>{`
-        .hover-shadow:hover {
-          box-shadow: 0 1rem 3rem rgba(0,0,0,.175)!important;
-          transform: translateY(-5px);
-        }
-      `}</style>
-    </Container>
+      {/* 🌟 第二個按鈕：履歷健檢（完美整合處） */}
+      <div className="card shadow-sm border-0 flex-fill bg-white p-4 text-center rounded-4 border border-primary-subtle">
+        <div className="fs-1 mb-2">📝</div>
+        <h4 className="fw-bold text-dark">履歷健檢</h4>
+        <p className="text-muted small mb-4">填寫或更新您的個人經歷，獲取 Gemini 提供的專業修改建議。</p>
+        <button 
+          onClick={() => router.push("/resume")} 
+          className="btn btn-outline-primary fw-bold w-100 py-2 rounded-3"
+        >
+          進入履歷健檢
+        </button>
+      </div>
+
+    </div>
   );
 }
