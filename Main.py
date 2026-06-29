@@ -11,8 +11,8 @@ import Model
 from Database import SessionLocal, engine
 import os
 import uuid
-import smtplib
-from email.mime.text import MIMEText
+import requests
+
 
 # 自動建立資料表
 Model.Base.metadata.create_all(bind=engine)
@@ -70,35 +70,64 @@ def reset_database():
 
 
 # 非同步寄送驗證信件函數
+# 非同步寄送驗證信件函數 (改為 Resend HTTP API 版本)
 def send_verification_email(email: str, token: str):
-    # 線上環境請確保有設定環境變數，否則預設指向 localhost
+    # 組裝驗證連結
     backend_base = os.getenv("BACKEND_URL", "http://localhost:8001")
     verify_url = f"{backend_base}/api/verify?token={token}"
     
     print(f"\n==================================================")
-    print(f"✉️  已向 {email} 發送驗證信！")
+    print(f"✉️  準備向 {email} 發送驗證信 (透過 Resend API)")
     print(f"🔗 驗證連結: {verify_url}")
     print(f"==================================================\n")
 
-    SMTP_HOST = os.getenv("SMTP_HOST")
-    SMTP_PORT = os.getenv("SMTP_PORT", "587")
-    SMTP_USER = os.getenv("SMTP_USER")
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+    # 讀取環境變數 (直接使用你的 Resend API Key)
+    RESEND_API_KEY = os.getenv("SMTP_PASSWORD") 
+    
+    # 🌟 這裡是你剛申請的專屬網域信箱 (請確認 Render 上有設定這個變數)
+    SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "noreply@cguimgraduatepj.me")
 
-    if SMTP_HOST and SMTP_USER and SMTP_PASSWORD:
-        try:
-            msg = MIMEText(f"您好：\n\n感謝您註冊 AI Career Coach！請點擊下方連結啟用您的帳號：\n{verify_url}\n\n如果您沒有註冊此網站，請忽略此郵件。", "plain", "utf-8")
-            msg["Subject"] = "AI Career Coach 帳號驗證信"
-            msg["From"] = SMTP_USER
-            msg["To"] = email
+    if not RESEND_API_KEY:
+        print("❌ 寄信失敗: 找不到 Resend API Key，請檢查環境變數 SMTP_PASSWORD")
+        return
 
-            with smtplib.SMTP(SMTP_HOST, int(SMTP_PORT)) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASSWORD)
-                server.send_message(msg)
-            print(f"✅ 郵件成功經由 SMTP 發送至 {email}")
-        except Exception as e:
-            print(f"❌ 郵件發送失敗: {str(e)}")
+    # 設定 API 標頭
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # 設定寄件內容 (支援 HTML 美化)
+    payload = {
+        "from": f"AI Career Coach <{SMTP_FROM_EMAIL}>",
+        "to": [email],
+        "subject": "AI Career Coach 帳號驗證信",
+        "html": f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 10px;">
+            <h2 style="color: #333; text-align: center;">🎉 歡迎註冊 AI Career Coach！</h2>
+            <p>您好：</p>
+            <p>感謝您使用本系統。請點擊下方按鈕以啟用您的帳號，開啟您的 AI 模擬面試之旅：</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{verify_url}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">點我驗證並開通帳號</a>
+            </div>
+            <p style="color: #666; font-size: 14px;">如果按鈕無法點擊，您也可以複製此連結至瀏覽器開啟：</p>
+            <p style="color: #007bff; font-size: 14px; word-break: break-all;">{verify_url}</p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+            <p style="color: #999; font-size: 12px; text-align: center;">如果您沒有註冊此網站，請忽略此郵件。</p>
+        </div>
+        """
+    }
+
+    try:
+        # 向 Resend 發送 POST 請求 (走 443 網頁通道，絕對不會被 Render 擋)
+        response = requests.post("https://api.resend.com/emails", headers=headers, json=payload)
+        
+        if response.status_code in [200, 201]:
+            print(f"✅ 郵件成功經由 Resend API 發送至 {email}")
+        else:
+            print(f"❌ 郵件 API 發送失敗: 狀態碼 {response.status_code}, 錯誤訊息: {response.text}")
+    except Exception as e:
+        print(f"❌ 郵件 API 連線發生異常錯誤: {str(e)}")
 
 
 @app.get("/")
