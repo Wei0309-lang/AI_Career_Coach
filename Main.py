@@ -26,7 +26,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://ai-career-coach-gray-iota.vercel.app"
+        "https://ai-career-coach-gray-iota.vercel.app",
+        "https://cguimgraduatepj.me",        # 
+        "https://www.cguimgraduatepj.me"     # 
     ],
     allow_origin_regex=r"https://.*\.vercel\.app", # 允許任何 vercel.app 結尾的來源
     allow_credentials=True,
