@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 
-export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
+type User = { id: string; email: string };
+
+export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: User) => void }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,7 +40,7 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: an
       } else {
         setError(data.detail || "操作失敗");
       }
-    } catch (err) {
+    } catch {
       setError("連線後端失敗");
     }
   };

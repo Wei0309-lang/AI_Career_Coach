@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ai-career-coach-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn Main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # --- 機密：需在 Render Dashboard 手動填入 ---
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false
+      # --- 非機密：已填入生產環境預設值 ---
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: OLLAMA_MODEL
+        value: my-career-coach
+      - key: SMTP_FROM_EMAIL
+        value: noreply@cguimgraduatepj.me
+      - key: FRONTEND_URL
+        value: https://cguimgraduatepj.me
+      - key: ALLOWED_ORIGINS
+        value: https://ai-career-coach-gray-iota.vercel.app,https://cguimgraduatepj.me,https://www.cguimgraduatepj.me
+      - key: BACKEND_URL
+        sync: false
+      - key: OLLAMA_HOST
+        sync: false

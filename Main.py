@@ -21,15 +21,18 @@ app = FastAPI()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
+# --- 可移植性設定：從環境變數讀取，方便在不同環境部署 ---
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "my-career-coach")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 # 🌟 核心修正 1：升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://ai-career-coach-gray-iota.vercel.app",
-        "https://cguimgraduatepj.me",        # 
-        "https://www.cguimgraduatepj.me"     # 
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=r"https://.*\.vercel\.app", # 允許任何 vercel.app 結尾的來源
     allow_credentials=True,
     allow_methods=["*"],
@@ -60,8 +63,11 @@ def get_db():
 
 
 # 🌟 核心修正 2：新增「重置資料庫」的 API (用來解決 f405 舊欄位衝突)
+# 需在 query string 帶上 secret=<ADMIN_SECRET> 才能執行，防止公開網路任意呼叫
 @app.get("/api/reset-db")
-def reset_database():
+def reset_database(secret: str = ""):
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="禁止存取：缺少或錯誤的 secret")
     try:
         # 這會強制刪除舊有的資料表，並依照最新的 Model.py 重新建立完整欄位
         Model.Base.metadata.drop_all(bind=engine)
@@ -195,13 +201,13 @@ def verify(token: str, db: Session = Depends(get_db)):
     db.commit()
     
     # 這裡的超連結會自動引導使用者回到 Next.js 前端網頁
-    return """
+    return f"""
     <html>
         <body style="text-align: center; margin-top: 50px; font-family: sans-serif;">
             <h2 style="color: #28a745;">🎉 驗證成功！</h2>
             <p>您的帳號已成功啟用，現在可以返回首頁登入系統了。</p>
             <br/>
-            <a href="https://ai-career-coach-gray-iota.vercel.app" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">返回登入頁面</a>
+            <a href="{FRONTEND_URL}" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">返回登入頁面</a>
         </body>
     </html>
     """
@@ -254,7 +260,7 @@ def submit_resume(data: ResumeData, db: Session = Depends(get_db)):
 
     try:
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=GEMINI_MODEL,
             contents=prompt
         )
         suggestion = response.text
@@ -269,7 +275,7 @@ def submit_resume(data: ResumeData, db: Session = Depends(get_db)):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     user_message = request.message
-    model_name = "my-career-coach"
+    model_name = OLLAMA_MODEL
     
     # 查詢當前使用者與其履歷
     user = db.query(Model.User).filter(Model.User.id == request.user_id).first()
