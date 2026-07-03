@@ -1,65 +1,140 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Container from "react-bootstrap/Container";
+import AuthGuard from "../components/AuthGuard";
+import { supabase } from "../lib/supabaseClient";
 
-export default function ResumePage() {
+const MAX_UPLOAD_SIZE_MB = 10;
+
+function ResumePageContent() {
   const router = useRouter();
-  const [userId, setUserId] = useState<string>("");
-  const [isAuth, setIsAuth] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestion, setSuggestion] = useState<string>("");
 
-  // 表單資料狀態
-  const [formData, setFormData] = useState({
-    fullName: "",
-    summary: "",
-    skills: "",
-    experience: "",
-  });
+  // 檔案上傳解析狀態
+  const [parsing, setParsing] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const wordInputRef = useRef<HTMLInputElement>(null);
 
-  // 安全守衛與初始化歷史資料
+  // 表單資料狀態
+  const emptyResume = { fullName: "", summary: "", skills: "", experience: "" };
+  const [formData, setFormData] = useState(emptyResume);
+  // 最後一次已知「已儲存」的內容，用來判斷目前表單是否有未送出的變更
+  const [savedData, setSavedData] = useState(emptyResume);
+  const isDirty = JSON.stringify(formData) !== JSON.stringify(savedData);
+
+  // 進入頁面時去後端撈取歷史履歷資料
   useEffect(() => {
-    const storedUser = sessionStorage.getItem("user");
-    if (!storedUser) {
-      router.replace("/");
-    } else {
-      try {
-        const user = JSON.parse(storedUser);
-        if (user && user.id) {
-          setUserId(user.id);
-          setIsAuth(true);
-          
-          // 當確認使用者登入後，立刻去後端撈取歷史履歷資料
-          fetchExistingResume(user.id);
-        } else {
-          router.replace("/");
-        }
-      } catch (e) {
-        router.replace("/");
+    fetchExistingResume();
+  }, []);
+
+  // 離開分頁（關閉/重新整理/跳轉外部網址）時，若有未儲存的變更則提醒使用者
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
       }
-    }
-  }, [router]);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   // 向後端 API 撈取歷史資料的函式
-  const fetchExistingResume = async (id: string) => {
+  const fetchExistingResume = async () => {
     try {
       const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-      const response = await fetch(`${BACKEND_URL}/api/resume/${id}`);
-      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`${BACKEND_URL}/api/resume`, {
+        headers: { "Authorization": `Bearer ${session.access_token}` },
+      });
+
       if (response.ok) {
         const data = await response.json();
-        // 將撈到的舊資料直接覆蓋到表單狀態中，讓輸入框直接呈現
-        setFormData({
+        // 將撈到的舊資料直接覆蓋到表單狀態中，讓輸入框直接呈現，並設為目前的「已儲存」基準
+        const resume = {
           fullName: data.fullName,
           summary: data.summary,
           skills: data.skills,
           experience: data.experience,
-        });
+        };
+        setFormData(resume);
+        setSavedData(resume);
       }
     } catch (err) {
       console.error("❌ 無法載入歷史履歷資料:", err);
+    }
+  };
+
+  // 判斷目前表單是否已有內容（不論是已儲存還是尚未送出），上傳新檔案前用來決定要不要跳確認
+  const hasExistingContent = () =>
+    Object.values(formData).some((v) => v.trim() !== "");
+
+  // 上傳 PDF/Word 履歷檔案，解析後自動帶入表單欄位
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允許重複選同一個檔案時仍能觸發 onChange
+    if (!file) return;
+
+    setUploadNotice("");
+    setUploadError("");
+
+    // 已上傳過履歷、或已解析但還沒送出：上傳新檔案前先提醒會覆蓋目前內容
+    if (hasExistingContent()) {
+      const confirmMessage = isDirty
+        ? "目前表單有尚未送出的內容，上傳新檔案將會覆蓋，確定要繼續嗎？"
+        : "目前已有履歷資料，上傳新檔案將會覆蓋，確定要繼續嗎？";
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+    }
+
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      setUploadError(`檔案大小超過 ${MAX_UPLOAD_SIZE_MB}MB 上限`);
+      return;
+    }
+
+    setParsing(true);
+
+    try {
+      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("尚未登入");
+      }
+
+      const body = new FormData();
+      body.append("file", file);
+
+      const response = await fetch(`${BACKEND_URL}/api/resume/parse`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}` },
+        body,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "檔案解析失敗");
+      }
+
+      setFormData({
+        fullName: data.fullName,
+        summary: data.summary,
+        skills: data.skills,
+        experience: data.experience,
+      });
+      setUploadNotice("已將內容填入表格，確認無誤後請送出");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "檔案解析失敗");
+    } finally {
+      setParsing(false);
     }
   };
 
@@ -70,14 +145,19 @@ export default function ResumePage() {
 
     try {
       const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-      
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("尚未登入");
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          ...formData,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(formData),
       });
 
       if (!response.ok) {
@@ -86,7 +166,10 @@ export default function ResumePage() {
 
       const data = await response.json();
       setSuggestion(data.suggestion);
-      
+      setSavedData(formData); // 送出成功，目前內容成為新的「已儲存」基準
+      setUploadNotice("");
+      setUploadError("");
+
     } catch (err) {
       setSuggestion("❌ 儲存失敗或 AI 健檢服務暫時無法使用，請檢查連線。");
     } finally {
@@ -94,27 +177,69 @@ export default function ResumePage() {
     }
   };
 
-  if (!isAuth) {
-    return (
-      <div className="min-vh-100 bg-light d-flex justify-content-center align-items-center">
-        <div className="spinner-border text-primary" role="status"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-vh-100 bg-light py-5">
       <Container className="max-w-3xl bg-white p-5 rounded shadow-sm">
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h2 className="fw-bold text-primary mb-0">📝 完善您的個人履歷</h2>
-          <button onClick={() => router.push("/")} className="btn btn-outline-secondary btn-sm">
+          <button
+            onClick={() => {
+              if (isDirty && !window.confirm("目前有尚未送出的變更，離開後將會遺失，確定要離開嗎？")) {
+                return;
+              }
+              router.push("/");
+            }}
+            className="btn btn-outline-secondary btn-sm"
+          >
             返回首頁
           </button>
         </div>
-        
+
         <p className="text-muted mb-4">
           此頁面已串接您的個人檔案。您可以隨時查看、調整或更新您的經歷，AI 面試官將即時採用最新內容！
+          {isDirty && <span className="badge text-bg-warning ms-2">尚未儲存</span>}
         </p>
+
+        <div className="mb-4 p-3 border rounded bg-light">
+          <p className="fw-bold text-dark mb-2">📄 上傳既有履歷檔案，自動帶入以下欄位</p>
+          <p className="text-muted small mb-3">支援 PDF、Word（.docx），檔案大小上限 {MAX_UPLOAD_SIZE_MB}MB</p>
+
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="d-none"
+            onChange={handleFileSelected}
+          />
+          <input
+            ref={wordInputRef}
+            type="file"
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="d-none"
+            onChange={handleFileSelected}
+          />
+
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm me-2"
+            disabled={parsing}
+            onClick={() => pdfInputRef.current?.click()}
+          >
+            上傳 PDF
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm"
+            disabled={parsing}
+            onClick={() => wordInputRef.current?.click()}
+          >
+            上傳 Word
+          </button>
+
+          {parsing && <p className="text-muted small mt-2 mb-0">解析中，請稍候...</p>}
+          {uploadNotice && <p className="text-success small mt-2 mb-0">✅ {uploadNotice}</p>}
+          {uploadError && <p className="text-danger small mt-2 mb-0">❌ {uploadError}</p>}
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
@@ -185,5 +310,19 @@ export default function ResumePage() {
         )}
       </Container>
     </div>
+  );
+}
+
+export default function ResumePage() {
+  return (
+    <AuthGuard
+      fallback={
+        <div className="min-vh-100 bg-light d-flex justify-content-center align-items-center">
+          <div className="spinner-border text-primary" role="status"></div>
+        </div>
+      }
+    >
+      <ResumePageContent />
+    </AuthGuard>
   );
 }

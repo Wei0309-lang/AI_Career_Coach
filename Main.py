@@ -1,35 +1,49 @@
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from passlib.context import CryptContext
 from ollama import AsyncClient
 from google import genai
-import uvicorn
+from pypdf import PdfReader
+from docx import Document
+import jwt
+from jwt import PyJWKClient
 import Model
 from Database import SessionLocal, engine
 import os
-import uuid
-import requests
+import io
+import json
 
 
 # 自動建立資料表
 Model.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
 # --- 可移植性設定：從環境變數讀取，方便在不同環境部署 ---
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "my-career-coach")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+MAX_RESUME_UPLOAD_MB = int(os.getenv("MAX_RESUME_UPLOAD_MB", "10"))
 
-# 🌟 核心修正 1：升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
+# Supabase 目前用非對稱金鑰（ES256）簽發 JWT，改用 JWKS 端點動態抓公鑰驗證，
+# 不需要再保管共享密鑰；PyJWKClient 內建快取，不會每次請求都重打一次端點
+_jwks_client: PyJWKClient | None = None
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        if not SUPABASE_URL:
+            raise HTTPException(status_code=500, detail="伺服器未設定 SUPABASE_URL")
+        _jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
+
+# 升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -39,16 +53,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class AuthCredential(BaseModel):
-    email: str
-    password: str
-
 class ChatRequest(BaseModel):
-    user_id: str
     message: str
 
 class ResumeData(BaseModel):
-    user_id: str
     fullName: str
     summary: str
     skills: str
@@ -62,7 +70,47 @@ def get_db():
         db.close()
 
 
-# 🌟 核心修正 2：新增「重置資料庫」的 API (用來解決 f405 舊欄位衝突)
+def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> Model.User:
+    """驗證 Supabase 簽發的 JWT（Authorization: Bearer <token>），
+    並取得（或建立）對應的本地使用者資料列。取代舊版直接信任前端傳入 user_id 的作法。"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少身份驗證憑證")
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    try:
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            audience="authenticated",
+        )
+    except HTTPException:
+        raise
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="憑證無效或已過期")
+    except Exception as e:
+        print(f"JWKS 驗證發生非預期錯誤: {e}")
+        raise HTTPException(status_code=500, detail="無法驗證身份憑證，請稍後再試")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="憑證缺少使用者資訊")
+
+    user = db.query(Model.User).filter(Model.User.id == user_id).first()
+    if not user:
+        # 使用者是在 Supabase 端完成註冊，本地資料庫尚無對應資料列時，
+        # 在第一次呼叫受保護 API 時建立履歷資料列（get-or-create）
+        user = Model.User(id=user_id, email=payload.get("email"))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return user
+
+
+# 「重置資料庫」的 API (用來解決舊欄位衝突)
 # 需在 query string 帶上 secret=<ADMIN_SECRET> 才能執行，防止公開網路任意呼叫
 @app.get("/api/reset-db")
 def reset_database(secret: str = ""):
@@ -77,102 +125,14 @@ def reset_database(secret: str = ""):
         return {"message": f"❌ 重置失敗: {str(e)}"}
 
 
-# 非同步寄送驗證信件函數
-# 非同步寄送驗證信件函數 (改為 Resend HTTP API 版本)
-def send_verification_email(email: str, token: str):
-    # 組裝驗證連結
-    backend_base = os.getenv("BACKEND_URL", "http://localhost:8001")
-    verify_url = f"{backend_base}/api/verify?token={token}"
-    
-    print(f"\n==================================================")
-    print(f"✉️  準備向 {email} 發送驗證信 (透過 Resend API)")
-    print(f"🔗 驗證連結: {verify_url}")
-    print(f"==================================================\n")
-
-    # 讀取環境變數 (直接使用你的 Resend API Key)
-    RESEND_API_KEY = os.getenv("SMTP_PASSWORD") 
-    
-    # 🌟 這裡是你剛申請的專屬網域信箱 (請確認 Render 上有設定這個變數)
-    SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "noreply@cguimgraduatepj.me")
-
-    if not RESEND_API_KEY:
-        print("❌ 寄信失敗: 找不到 Resend API Key，請檢查環境變數 SMTP_PASSWORD")
-        return
-
-    # 設定 API 標頭
-    headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    # 設定寄件內容 (支援 HTML 美化)
-    payload = {
-        "from": f"AI Career Coach <{SMTP_FROM_EMAIL}>",
-        "to": [email],
-        "subject": "AI Career Coach 帳號驗證信",
-        "html": f"""
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 10px;">
-            <h2 style="color: #333; text-align: center;">🎉 歡迎註冊 AI Career Coach！</h2>
-            <p>您好：</p>
-            <p>感謝您使用本系統。請點擊下方按鈕以啟用您的帳號，開啟您的 AI 模擬面試之旅：</p>
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="{verify_url}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">點我驗證並開通帳號</a>
-            </div>
-            <p style="color: #666; font-size: 14px;">如果按鈕無法點擊，您也可以複製此連結至瀏覽器開啟：</p>
-            <p style="color: #007bff; font-size: 14px; word-break: break-all;">{verify_url}</p>
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-            <p style="color: #999; font-size: 12px; text-align: center;">如果您沒有註冊此網站，請忽略此郵件。</p>
-        </div>
-        """
-    }
-
-    try:
-        # 向 Resend 發送 POST 請求 (走 443 網頁通道，絕對不會被 Render 擋)
-        response = requests.post("https://api.resend.com/emails", headers=headers, json=payload)
-        
-        if response.status_code in [200, 201]:
-            print(f"✅ 郵件成功經由 Resend API 發送至 {email}")
-        else:
-            print(f"❌ 郵件 API 發送失敗: 狀態碼 {response.status_code}, 錯誤訊息: {response.text}")
-    except Exception as e:
-        print(f"❌ 郵件 API 連線發生異常錯誤: {str(e)}")
-
-
 @app.get("/")
 def root():
     return {"message": "AI Career Coach API is running"}
 
 
-# --- 註冊功能 ---
-@app.post("/api/register")
-def register(data: AuthCredential, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    user = db.query(Model.User).filter(Model.User.email == data.email).first()
-    if user:
-        raise HTTPException(status_code=400, detail="此 Email 已被註冊")
-    
-    hashed_pwd = pwd_context.hash(data.password)
-    verification_token = str(uuid.uuid4())
-    
-    new_user = Model.User(
-        email=data.email, 
-        password_hash=hashed_pwd,
-        is_verified=False,
-        verification_token=verification_token
-    )
-    
-    db.add(new_user)
-    db.commit()
-    
-    background_tasks.add_task(send_verification_email, data.email, verification_token)
-    return {"message": "註冊成功！請檢查您的信箱並點擊驗證連結完成開通。"}
-
-# 🌟 新增：讀取現有履歷資料的 API
-@app.get("/api/resume/{user_id}")
-def get_resume(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(Model.User).filter(Model.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="找不到使用者")
-    
+# 讀取現有履歷資料的 API
+@app.get("/api/resume")
+def get_resume(user: Model.User = Depends(get_current_user)):
     # 將資料庫中的內容回傳給前端，若為 None 則給予空字串避免前端 input 報錯
     return {
         "fullName": user.full_name or "",
@@ -181,62 +141,86 @@ def get_resume(user_id: str, db: Session = Depends(get_db)):
         "experience": user.experience or ""
     }
 
-# 驗證信箱端點
-@app.get("/api/verify", response_class=HTMLResponse)
-def verify(token: str, db: Session = Depends(get_db)):
-    user = db.query(Model.User).filter(Model.User.verification_token == token).first()
-    
-    if not user:
-        return """
-        <html>
-            <body style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-                <h2 style="color: #dc3545;">❌ 驗證失敗</h2>
-                <p>無效的驗證代碼或此連結已失效。</p>
-            </body>
-        </html>
-        """
-        
-    user.is_verified = True
-    user.verification_token = None
-    db.commit()
-    
-    # 這裡的超連結會自動引導使用者回到 Next.js 前端網頁
-    return f"""
-    <html>
-        <body style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-            <h2 style="color: #28a745;">🎉 驗證成功！</h2>
-            <p>您的帳號已成功啟用，現在可以返回首頁登入系統了。</p>
-            <br/>
-            <a href="{FRONTEND_URL}" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">返回登入頁面</a>
-        </body>
-    </html>
-    """
+
+def _extract_text_from_pdf(content: bytes) -> str:
+    reader = PdfReader(io.BytesIO(content))
+    if reader.is_encrypted:
+        raise ValueError("PDF 檔案已加密，請上傳未加密的檔案")
+    pages_text = [page.extract_text() or "" for page in reader.pages]
+    return "\n".join(pages_text).strip()
 
 
-# --- 登入功能 ---
-@app.post("/api/login")
-def login(data: AuthCredential, db: Session = Depends(get_db)):
-    user = db.query(Model.User).filter(Model.User.email == data.email).first()
-    
-    if not user or not pwd_context.verify(data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="帳號或密碼錯誤")
-    
-    if not user.is_verified:
-        raise HTTPException(status_code=403, detail="此帳號尚未完成信件認證，請先至信箱收取驗證信開通。")
-    
+def _extract_text_from_docx(content: bytes) -> str:
+    document = Document(io.BytesIO(content))
+    return "\n".join(p.text for p in document.paragraphs).strip()
+
+
+# --- 履歷檔案上傳解析 API（PDF / Word，解析完即丟棄檔案本體，不做任何儲存）---
+@app.post("/api/resume/parse")
+async def parse_resume_file(file: UploadFile = File(...), user: Model.User = Depends(get_current_user)):
+    filename = (file.filename or "").lower()
+    if filename.endswith(".pdf"):
+        file_kind = "pdf"
+    elif filename.endswith(".docx"):
+        file_kind = "docx"
+    else:
+        raise HTTPException(status_code=400, detail="僅支援 PDF 或 Word(.docx) 檔案")
+
+    content = await file.read()
+    if len(content) > MAX_RESUME_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"檔案大小超過 {MAX_RESUME_UPLOAD_MB}MB 上限")
+
+    try:
+        if file_kind == "pdf":
+            raw_text = _extract_text_from_pdf(content)
+        else:
+            raw_text = _extract_text_from_docx(content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="檔案解析失敗，請確認檔案未毀損")
+
+    if len(raw_text) < 20:
+        raise HTTPException(
+            status_code=400,
+            detail="偵測不到可選取的文字內容，請確認上傳的是文字型 PDF/Word（不支援掃描圖檔）"
+        )
+
+    prompt = f"""你是一個履歷資料整理助手。請將以下履歷原文整理成 JSON 格式，欄位為：
+fullName（姓名）、summary（個人簡介）、skills（專業技能）、experience（工作/專案經歷）。
+若原文中找不到某欄位對應的資訊，該欄位請回傳空字串。
+只回傳 JSON 本身，不要加上任何說明文字或 markdown 標記。
+
+【履歷原文】
+{raw_text}
+"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt
+        )
+        raw_json = response.text.strip()
+        if raw_json.startswith("```"):
+            raw_json = raw_json.strip("`")
+            if raw_json.lower().startswith("json"):
+                raw_json = raw_json.split("\n", 1)[1] if "\n" in raw_json else ""
+        parsed = json.loads(raw_json)
+    except Exception as e:
+        print(f"履歷 AI 解析失敗: {e}")
+        raise HTTPException(status_code=502, detail="AI 解析履歷內容失敗，請稍後再試")
+
     return {
-        "message": "登入成功",
-        "user": {"id": user.id, "email": user.email}
+        "fullName": parsed.get("fullName", "") or "",
+        "summary": parsed.get("summary", "") or "",
+        "skills": parsed.get("skills", "") or "",
+        "experience": parsed.get("experience", "") or "",
     }
 
 
-# --- 🌟 新增：履歷整合 API（從 Huang 分支轉換移植） ---
+# --- 履歷整合 API ---
 @app.post("/api/resume")
-def submit_resume(data: ResumeData, db: Session = Depends(get_db)):
-    user = db.query(Model.User).filter(Model.User.id == data.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="找不到使用者")
-    
+def submit_resume(data: ResumeData, user: Model.User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 存入資料庫以供後續 AI 面試官參考
     user.full_name = data.fullName
     user.summary = data.summary
@@ -271,19 +255,14 @@ def submit_resume(data: ResumeData, db: Session = Depends(get_db)):
     return {"suggestion": suggestion}
 
 
-# --- 🌟 升級：AI 對話 API (嚴格面試官版 - 包含履歷內容與對話記憶) ---
+# --- AI 對話 API (嚴格面試官版 - 包含履歷內容與對話記憶) ---
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_current_user), db: Session = Depends(get_db)):
     user_message = request.message
     model_name = OLLAMA_MODEL
-    
-    # 查詢當前使用者與其履歷
-    user = db.query(Model.User).filter(Model.User.id == request.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="使用者不存在")
 
     print(f"------------\n收到使用者問題 (ID: {user.id}): {user_message}")
-  
+
     # 將使用者的履歷資訊動態塞入系統 prompt 中，形成個人化上下文
     profile_context = f"""
     【求職者基本資訊】：
@@ -311,10 +290,10 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                         .filter(Model.ChatMessage.user_id == user.id)\
                         .order_by(Model.ChatMessage.created_at.asc())\
                         .limit(10).all()
-    
+
     # 建立 Ollama 的訊息傳送矩陣
     messages_payload = [{"role": "system", "content": system_prompt}]
-    
+
     # 把歷史紀錄塞進去
     for msg in history_records:
         messages_payload.append({"role": msg.role, "content": msg.content})
@@ -330,28 +309,28 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     try:
         ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         client = AsyncClient(host=ollama_host)
-        
+
         response = await client.chat(
             model=model_name,
             messages=messages_payload,
             options={
-                "temperature": 0.3, 
+                "temperature": 0.3,
                 "num_predict": 1024,
                 "top_k": 40,
                 "top_p": 0.9,
             }
         )
-        
+
         if 'message' in response and 'content' in response['message']:
             ai_response = response['message']['content']
             if not ai_response.strip():
                 ai_response = "（面試官正看著你，似乎在等待更具體的回答...）"
-            
+
             # 2️⃣ 將 AI 的回答也寫入資料庫，完成記憶閉環
             new_ai_msg = Model.ChatMessage(user_id=user.id, role="assistant", content=ai_response)
             db.add(new_ai_msg)
             db.commit()
-            
+
             return {"response": ai_response}
         else:
             db.commit() # 仍提交使用者端訊息

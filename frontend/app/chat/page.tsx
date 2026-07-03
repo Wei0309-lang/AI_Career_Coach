@@ -1,46 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import InputBox from "./InputBox";
 import ChatBody from "./chatBody"; // 注意：請確認您的檔案名稱大小寫是否正確
 import Container from 'react-bootstrap/Container';
+import AuthGuard from "../components/AuthGuard";
+import { supabase } from "../lib/supabaseClient";
 
 interface ChatContent {
     role: "user" | "Ai";
     content: string;
 }
 
-export default function Home() {
-    const router = useRouter();
+function ChatPageContent() {
     const [chatContents, setChatContents] = useState<ChatContent[]>([]);
     const [loading, setLoading] = useState(false);
-    
-    // 驗證狀態與使用者 ID
-    const [isAuth, setIsAuth] = useState(false);
-    const [userId, setUserId] = useState<string>("");
-
-    // 🌟 核心修正：阻擋瀏覽器上一頁/下一頁繞過登入的安全守衛
-    useEffect(() => {
-        const storedUser = sessionStorage.getItem("user");
-        
-        if (!storedUser) {
-            // 如果沒有登入憑證，用 replace 強制替換歷史紀錄，徹底封鎖瀏覽器上下頁
-            router.replace("/");
-        } else {
-            try {
-                const user = JSON.parse(storedUser);
-                if (user && user.id) {
-                    setUserId(user.id);
-                    setIsAuth(true); // 驗證成功，允許渲染畫面
-                } else {
-                    router.replace("/");
-                }
-            } catch (e) {
-                router.replace("/");
-            }
-        }
-    }, [router]);
 
     const handleSend = async (text: string) => {
         // 1️⃣ 先加使用者訊息
@@ -51,13 +25,20 @@ export default function Home() {
             // 優先讀取環境變數，如果沒有才用 localhost
             const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
-            // 將 userId 一併發送給後端，使 AI 能辨識身分、讀取履歷與對話記憶
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                throw new Error("尚未登入");
+            }
+
+            // 用登入憑證（JWT）辨識身分，後端據此讀取履歷與對話記憶
             const res = await fetch(`${BACKEND_URL}/chat`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    user_id: userId, 
-                    message: text 
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                    message: text
                 }),
             });
 
@@ -75,7 +56,6 @@ export default function Home() {
                 ...prev,
                 {
                     role: "Ai",
-                    // 【修改 2】這裡必須改成 data.response，因為您的 Python 是回傳 {"response": "..."}
                     content: data.response
                 },
             ]);
@@ -90,15 +70,6 @@ export default function Home() {
         }
     };
 
-    // 安全保護：在驗證未通過前不渲染任何內容，防止對話介面外洩
-    if (!isAuth) {
-        return (
-            <div className="min-vh-100 bg-dark d-flex justify-content-center align-items-center">
-                <div className="text-white-50">安全性驗證中...</div>
-            </div>
-        );
-    }
-
     return (
         <div className="min-vh-100 d-flex flex-column bg-dark">
             <Container className="p-4 flex-grow-1 d-flex flex-column">
@@ -112,5 +83,19 @@ export default function Home() {
 
             <InputBox onSend={handleSend} />
         </div>
+    );
+}
+
+export default function Home() {
+    return (
+        <AuthGuard
+            fallback={
+                <div className="min-vh-100 bg-dark d-flex justify-content-center align-items-center">
+                    <div className="text-white-50">安全性驗證中...</div>
+                </div>
+            }
+        >
+            <ChatPageContent />
+        </AuthGuard>
     );
 }

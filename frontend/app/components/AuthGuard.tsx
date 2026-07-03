@@ -1,19 +1,41 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "../lib/supabaseClient";
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
+export default function AuthGuard({
+  children,
+  fallback = null,
+}: {
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
   const router = useRouter();
   const [verified, setVerified] = useState(false);
 
   useEffect(() => {
-    const user = sessionStorage.getItem("user");
-    if (!user) {
-      router.replace("/");
-    } else {
-      setVerified(true);
-    }
+    let active = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
+      if (!session) {
+        router.replace("/");
+      } else {
+        setVerified(true);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        router.replace("/");
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
-  return verified ? <>{children}</> : null;
+  return verified ? <>{children}</> : <>{fallback}</>;
 }
