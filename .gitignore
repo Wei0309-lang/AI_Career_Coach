@@ -45,3 +45,7 @@ Thumbs.db
 models/
 
 *.gguf
+
+frontend/public/avatar-suit.glb
+frontend/public/avatar-formal.glb
+frontend/public/avatar.glb

@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +14,11 @@ from Database import SessionLocal, engine
 import os
 import uuid
 import requests
+from avatar import router as avatar_router
+from heygen import router as heygen_router      
+from interview import router as interview_router
+from resume_upload import router as resume_upload_router
+
 
 
 # 自動建立資料表
@@ -20,6 +27,7 @@ Model.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+app.include_router(heygen_router)                
 
 # --- 可移植性設定：從環境變數讀取，方便在不同環境部署 ---
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -38,6 +46,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(avatar_router)
 
 class AuthCredential(BaseModel):
     email: str
@@ -61,6 +71,8 @@ def get_db():
     finally:
         db.close()
 
+app.include_router(interview_router)
+app.include_router(resume_upload_router)
 
 # 🌟 核心修正 2：新增「重置資料庫」的 API (用來解決 f405 舊欄位衝突)
 # 需在 query string 帶上 secret=<ADMIN_SECRET> 才能執行，防止公開網路任意呼叫
@@ -181,34 +193,70 @@ def get_resume(user_id: str, db: Session = Depends(get_db)):
         "experience": user.experience or ""
     }
 
-# 驗證信箱端點
+# 驗證信箱端點(🎨 studio 深色主題版,邏輯與原版相同)
 @app.get("/api/verify", response_class=HTMLResponse)
 def verify(token: str, db: Session = Depends(get_db)):
     user = db.query(Model.User).filter(Model.User.verification_token == token).first()
-    
+
+    _page_style = """
+    <style>
+      body {
+        margin: 0; min-height: 100vh;
+        display: flex; align-items: center; justify-content: center;
+        font-family: "Noto Sans TC", "Segoe UI", sans-serif;
+        color: #E9EDF3;
+        background:
+          radial-gradient(1100px 520px at 82% -12%, rgba(108,140,255,.16), transparent 60%),
+          radial-gradient(900px 520px at -5% 112%, rgba(34,211,182,.10), transparent 55%),
+          #0D1017;
+      }
+      .panel {
+        background: #151A23; border: 1px solid rgba(255,255,255,.08);
+        border-radius: 20px; box-shadow: 0 24px 60px rgba(0,0,0,.45);
+        padding: 3rem 3.5rem; text-align: center; max-width: 420px;
+      }
+      .eyebrow { letter-spacing: .35em; font-size: .72rem; color: #93A0AF; text-transform: uppercase; }
+      h2 { margin: .6rem 0 .4rem; font-weight: 900; }
+      p  { color: #93A0AF; font-size: .9rem; line-height: 1.7; }
+      .btn {
+        display: inline-block; margin-top: 1.4rem; padding: .8rem 2rem;
+        background: linear-gradient(135deg, #6C8CFF, #8A6CFF); color: #fff;
+        text-decoration: none; border-radius: 12px; font-weight: 700;
+      }
+      .ok  { color: #22D3B6; }
+      .bad { color: #FF5C5C; }
+    </style>
+    """
+
     if not user:
-        return """
+        return f"""
         <html>
-            <body style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-                <h2 style="color: #dc3545;">❌ 驗證失敗</h2>
-                <p>無效的驗證代碼或此連結已失效。</p>
-            </body>
+          <head><meta charset="utf-8"><title>驗證失敗</title>{_page_style}</head>
+          <body>
+            <div class="panel">
+              <span class="eyebrow">AI Career Coach</span>
+              <h2 class="bad">✕ 驗證失敗</h2>
+              <p>無效的驗證代碼，或此連結已經失效。<br/>請重新註冊，或使用最新一封驗證信中的連結。</p>
+            </div>
+          </body>
         </html>
         """
-        
+
     user.is_verified = True
     user.verification_token = None
     db.commit()
-    
-    # 這裡的超連結會自動引導使用者回到 Next.js 前端網頁
+
     return f"""
     <html>
-        <body style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-            <h2 style="color: #28a745;">🎉 驗證成功！</h2>
-            <p>您的帳號已成功啟用，現在可以返回首頁登入系統了。</p>
-            <br/>
-            <a href="{FRONTEND_URL}" style="padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">返回登入頁面</a>
-        </body>
+      <head><meta charset="utf-8"><title>驗證成功</title>{_page_style}</head>
+      <body>
+        <div class="panel">
+          <span class="eyebrow">AI Career Coach</span>
+          <h2 class="ok">✓ 驗證成功</h2>
+          <p>您的帳號已成功啟用。<br/>歡迎進入面試室，祝您練習順利！</p>
+          <a class="btn" href="{FRONTEND_URL}">前往登入</a>
+        </div>
+      </body>
     </html>
     """
 
@@ -246,6 +294,8 @@ def submit_resume(data: ResumeData, db: Session = Depends(get_db)):
 
     prompt = f"""你是一位專業的履歷顧問。請根據以下這份履歷,給出具體、可執行的改善建議。
 請用繁體中文,條列 3-5 點重點,語氣專業但友善。
+輸出純文字即可:不要使用任何 Markdown 符號(如 **、*、#、`),
+條列請直接用「1. 2. 3.」與「・」,重點詞彙不需要加粗。
 
 【個人簡介】
 {data.summary}
@@ -328,6 +378,33 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     db.add(new_user_msg)
 
     try:
+        # 🆕 ============================================================
+        # 本地開發模式：.env 設 USE_GEMINI_CHAT=1 時改用 Gemini 回覆，
+        # 不需要安裝 Ollama。Render 雲端沒設此變數，會自動跳過這一段、
+        # 照常執行下方原本的 Ollama 邏輯（原始程式碼完整保留，未刪除）。
+        # ============================================================
+        if os.getenv("USE_GEMINI_CHAT", "0") == "1":
+            convo = "\n".join(
+                ("面試者：" if m["role"] == "user" else "面試官：") + m["content"]
+                for m in messages_payload[1:]
+            )
+            g = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=system_prompt
+                + "\n\n以下是目前的對話，請以面試官身分回覆最後一則，只輸出面試官要說的話：\n"
+                + convo,
+            )
+            ai_response = (g.text or "").strip()
+            if not ai_response:
+                ai_response = "（面試官正看著你，似乎在等待更具體的回答...）"
+
+            new_ai_msg = Model.ChatMessage(user_id=user.id, role="assistant", content=ai_response)
+            db.add(new_ai_msg)
+            db.commit()
+
+            return {"response": ai_response}
+        # 🆕 ===================== Gemini 分支結束 =====================
+
         ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         client = AsyncClient(host=ollama_host)
         
@@ -360,4 +437,4 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback() # 發生錯誤時回滾
         print(f"❌ 發生錯誤: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ollama 連線失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {str(e)}")

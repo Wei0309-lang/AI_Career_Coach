@@ -1,11 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
 @import "tailwindcss";
+
+/* ============================================================
+   AI 職涯導師 — 「視訊面試室」主題
+   設計概念:整個產品是一間專業的線上面試室。
+   深色攝影棚底 + 冷色頂光、玻璃面板、ON AIR 錄影紅點、
+   視訊會議式名牌。三個頁面共用同一套變數與元件樣式。
+   ============================================================ */
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* studio tokens */
+  --studio-bg: #0D1017;        /* 攝影棚底色 */
+  --studio-panel: #151A23;     /* 面板 */
+  --studio-line: rgba(255, 255, 255, 0.08);
+  --studio-text: #E9EDF3;
+  --studio-dim: #93A0AF;
+  --studio-accent: #6C8CFF;    /* 主色:面試藍 */
+  --studio-accent-2: #22D3B6;  /* 輔色:上線綠 */
+  --studio-rec: #FF5C5C;       /* ON AIR 紅點 */
 }
-
-
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -17,5 +33,251 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Noto Sans TC", "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+/* ---------- 版面底 ---------- */
+.studio-bg {
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 520px at 82% -12%, rgba(108, 140, 255, 0.16), transparent 60%),
+    radial-gradient(900px 520px at -5% 112%, rgba(34, 211, 182, 0.10), transparent 55%),
+    var(--studio-bg);
+  color: var(--studio-text);
+}
+
+/* ---------- 面板與卡片 ---------- */
+.studio-panel {
+  background: var(--studio-panel);
+  border: 1px solid var(--studio-line);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.feature-card {
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(108, 140, 255, 0.45);
+}
+
+.icon-chip {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(108, 140, 255, 0.12);
+  color: var(--studio-accent);
+  margin: 0 auto;
+  font-size: 1.5rem;
+}
+.icon-chip--teal {
+  background: rgba(34, 211, 182, 0.12);
+  color: var(--studio-accent-2);
+}
+
+/* ---------- 文字 ---------- */
+.studio-eyebrow {
+  letter-spacing: 0.35em;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--studio-dim);
+  text-transform: uppercase;
+}
+.studio-title {
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: var(--studio-text);
+}
+.studio-dim { color: var(--studio-dim); }
+
+/* ---------- 表單 ---------- */
+.studio-input {
+  background: #0F1319 !important;
+  border: 1px solid var(--studio-line) !important;
+  color: var(--studio-text) !important;
+  border-radius: 12px !important;
+  padding: 0.8rem 1rem !important;
+}
+.studio-input::placeholder { color: #5d6a79 !important; }
+.studio-input:focus {
+  border-color: var(--studio-accent) !important;
+  box-shadow: 0 0 0 0.2rem rgba(108, 140, 255, 0.18) !important;
+  outline: none;
+}
+
+/* ---------- 按鈕 ---------- */
+.btn-studio {
+  background: linear-gradient(135deg, #6C8CFF, #8A6CFF);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.8rem 1.2rem;
+  font-weight: 700;
+}
+.btn-studio:hover { filter: brightness(1.08); color: #fff; }
+.btn-studio:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.btn-studio-ghost {
+  background: transparent;
+  color: var(--studio-text);
+  border: 1px solid var(--studio-line);
+  border-radius: 12px;
+  padding: 0.8rem 1.2rem;
+  font-weight: 600;
+}
+.btn-studio-ghost:hover { border-color: var(--studio-accent); color: #fff; }
+
+/* ---------- ON AIR 錄影燈(招牌元素) ---------- */
+.onair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--studio-dim);
+  letter-spacing: 0.14em;
+}
+.onair::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--studio-rec);
+  box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.55);
+  animation: onair-pulse 1.8s infinite;
+}
+@keyframes onair-pulse {
+  70%  { box-shadow: 0 0 0 0.55rem rgba(255, 92, 92, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0); }
+}
+
+/* ---------- 視訊會議名牌(掛在虛擬人畫面上) ---------- */
+.studio-tile { position: relative; }
+.studio-nametag {
+  position: absolute;
+  left: 14px;
+  bottom: 26px;
+  background: rgba(10, 12, 17, 0.72);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--studio-line);
+  color: var(--studio-text);
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 9px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ---------- 名牌 v2:姓名 + 職位/難度膠囊 ---------- */
+.studio-nametag2 {
+  position: absolute;
+  left: 16px;
+  bottom: 30px;
+  background: rgba(10, 12, 17, 0.78);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--studio-line);
+  border-radius: 12px;
+  padding: 0.55rem 0.9rem;
+  z-index: 5;
+  pointer-events: none;
+}
+.studio-nametag2 .name {
+  color: var(--studio-text);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+.studio-nametag2 .role {
+  color: var(--studio-dim);
+  font-size: 0.7rem;
+  margin-left: 0.4rem;
+}
+.studio-nametag2 .chips {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+.studio-nametag2 .chip {
+  font-size: 0.68rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(108, 140, 255, 0.16);
+  color: #ADC0FF;
+  border: 1px solid rgba(108, 140, 255, 0.35);
+}
+.studio-nametag2 .chip--level {
+  background: rgba(255, 180, 84, 0.14);
+  color: #FFCE8A;
+  border-color: rgba(255, 180, 84, 0.35);
+}
+
+/* ---------- 底部輸入列 ---------- */
+.studio-inputbar {
+  background: rgba(13, 16, 23, 0.88);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--studio-line);
+}
+
+/* ---------- 動效可及性 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .onair::before { animation: none; }
+  .feature-card { transition: none; }
+}
+
+/* ============================================================
+   轉場與動態(v3)
+   ============================================================ */
+
+/* 全頁進場:淡入 + 微上移 */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 面板與卡片:錯落進場(每張延遲一點,像依序入座) */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.studio-panel {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.studio-panel:nth-child(2) { animation-delay: 0.07s; }
+.studio-panel:nth-child(3) { animation-delay: 0.14s; }
+.studio-panel:nth-child(4) { animation-delay: 0.21s; }
+
+/* 名牌:面試官登場後才滑入 */
+.studio-nametag,
+.studio-nametag2 {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.35s both;
+}
+
+/* 按鈕:按下的回饋感 */
+.btn-studio, .btn-studio-ghost {
+  transition: transform 0.12s ease, filter 0.15s ease, border-color 0.15s ease;
+}
+.btn-studio:active, .btn-studio-ghost:active {
+  transform: scale(0.96);
+}
+
+/* 膠囊標籤:輕微彈入 */
+.studio-nametag2 .chip {
+  animation: rise-in 0.4s ease 0.5s both;
+}
+.studio-nametag2 .chip--level { animation-delay: 0.58s; }
+
+/* 尊重系統的「減少動態效果」設定 */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .studio-panel,
+  .studio-nametag, .studio-nametag2,
+  .studio-nametag2 .chip {
+    animation: none;
+  }
+  .btn-studio:active, .btn-studio-ghost:active { transform: none; }
 }
