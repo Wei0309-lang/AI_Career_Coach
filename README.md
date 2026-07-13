@@ -1,203 +1,162 @@
-# AI Career Coach
+# AI 職涯導師 — 智慧模擬面試平台
 
-AI 驅動的職涯輔助平台，提供 AI 模擬面試與履歷評鑑功能。
+> 本文件說明本人於團隊畢業專題「AI Career Coach」中負責之模組。
+> 對應分支：`avatar-local`
 
-- **前端**：Next.js 16 + TypeScript
-- **後端**：Python FastAPI
-- **AI 面試**：Ollama 本地 LLM（llama-3-8b）
-- **履歷評鑑**：Google Gemini API
-
-> **注意**：Vercel、Render、Neon（雲端資料庫）、Resend（寄信服務）的帳號權限僅限專案負責人持有。
-> 其他開發者請依照本文件在**本機**建立完整的獨立測試環境。
+一套讓求職者與 **AI 虛擬面試官**進行即時對話練習的平台。系統提供兩種面試官呈現模式——自建的 **3D 虛擬人**與商用服務串接的**擬真真人影像**——並在面試結束後產出 **AI 評估報告**，協助使用者複盤與追蹤進步。
 
 ---
 
-## 本地開發環境建置
+## 一、負責功能總覽
 
-### 前置需求
-
-| 工具 | 版本 | 說明 |
-|---|---|---|
-| Python | 3.10+ | 後端執行環境 |
-| Node.js | 18+ | 前端執行環境 |
-| Git | 任意 | 版本控制 |
-| DB Browser for SQLite | 最新版 | 手動驗證帳號用（見下方說明） |
-| Ollama | 最新版 | AI 面試功能（選用） |
-
-- DB Browser for SQLite 下載：https://sqlitebrowser.org
-- Ollama 下載：https://ollama.com
+| 模組 | 說明 |
+|------|------|
+| **3D 虛擬面試官** | 以 TalkingHead + Three.js 於瀏覽器即時渲染 3D 人物，串接 Azure 語音合成（TTS），並透過 viseme（嘴型音素）資料驅動嘴型與語音同步。 |
+| **擬真面試官模式** | 串接 LiveAvatar（HeyGen）即時虛擬人，提供照片級真人影像的面試體驗。與 3D 模式可透過環境變數一鍵切換。 |
+| **面試場次系統** | 使用者可選擇目標職位與應徵級別，面試官依此動態調整提問方向與評估標準；每場面試為獨立場次，對話記憶限定於場次內。 |
+| **AI 評估報告** | 面試結束後，將完整對話交由 Gemini 分析，產出總分、三維度評分（技術深度／溝通表達／問題解決）、表現亮點與改進建議。 |
+| **面試歷史紀錄** | 保存每場面試的評分與逐字稿，可點擊展開完整報告，追蹤練習軌跡。 |
+| **履歷 PDF 解析** | 上傳履歷 PDF，由 Gemini 解析內容並自動填入表單；面試官會依履歷內容提出個人化問題。 |
+| **語音／文字輸入** | 支援以 Web Speech API 語音輸入（繁體中文辨識），可與文字輸入自由混用。 |
+| **整體 UI** | 以「視訊面試室」為主題設計的深色介面，含 ON AIR 錄影提示、面試官名牌、全站頁面轉場動畫。 |
 
 ---
 
-### Step 1：Clone 專案
+## 二、技術架構
 
+**前端**：Next.js 16（App Router）、React 19、Bootstrap、Three.js／TalkingHead
+**後端**：FastAPI、SQLAlchemy
+**資料庫**：本地 SQLite ／ 生產環境 Neon PostgreSQL
+**AI／雲端服務**：Google Gemini（對話與解析）、Azure Speech（語音合成）、LiveAvatar/HeyGen（擬真虛擬人）
+
+```
+使用者 (瀏覽器)
+   │  文字／語音輸入
+   ▼
+Next.js 前端  ──►  FastAPI 後端  ──►  Gemini（產生面試官回覆／報告）
+   │                    │
+   │                    └──►  Azure TTS（語音＋嘴型資料）
+   │
+   └── 3D 模式：TalkingHead 於瀏覽器渲染人物並同步嘴型
+   └── 擬真模式：內嵌 LiveAvatar 即時影像串流
+```
+
+---
+
+## 三、專案結構（本人負責之主要檔案）
+
+```
+後端（repo 根目錄）
+├── Main.py            # FastAPI 主程式、登入註冊、對話、履歷、路由掛載
+├── Model.py           # 資料表定義（User、ChatMessage、InterviewSession）
+├── avatar.py          # Azure TTS 語音合成端點（提供 3D 模式音訊與 viseme）
+├── heygen.py          # LiveAvatar 擬真虛擬人 embed 端點
+├── interview.py       # 面試場次系統：開始／對話／結束報告／歷史紀錄
+└── resume_upload.py   # 履歷 PDF 上傳與 Gemini 解析
+
+前端（frontend/app/）
+├── chat/
+│   ├── page.tsx            # 面試室主頁：模式選擇 → 面試 → 報告
+│   ├── Avatar3D.tsx        # 3D 虛擬面試官元件
+│   ├── HeyGenAvatar.tsx    # 擬真面試官元件
+│   ├── InputBox.tsx        # 文字＋語音輸入列
+│   └── VoiceInputButton.tsx# 語音輸入按鈕
+├── records/page.tsx        # 面試歷史紀錄與詳細報告
+├── resume/                 # 履歷健檢與 PDF 上傳
+├── template.tsx            # 全域頁面轉場動畫
+└── globals.css             # 視訊面試室主題樣式
+```
+
+---
+
+## 四、安裝與啟動
+
+### 環境需求
+- Python 3.12（建議；3.14 部分套件相容性尚未完整）
+- Node.js 18 以上
+
+### 1. 取得專案
 ```bash
-git clone https://github.com/Wei0309-lang/AI_Career_Coach.git
+git clone -b avatar-local https://github.com/Wei0309-lang/AI_Career_Coach.git
 cd AI_Career_Coach
 ```
 
----
-
-### Step 2：後端設定
-
+### 2. 後端環境
 ```bash
-# 建立虛擬環境
-python -m venv .venv
-
-# 啟動虛擬環境
-# Windows：
-.venv\Scripts\activate
-# Mac / Linux：
-source .venv/bin/activate
+# 建立並啟用虛擬環境（Windows PowerShell）
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 
 # 安裝套件
 pip install -r requirements.txt
+pip install azure-cognitiveservices-speech pyjwt   # 額外依賴
 ```
 
-複製環境變數範本：
-
+### 3. 設定環境變數
+複製範本並填入實際金鑰（`.env` 切勿上傳至 git）：
 ```bash
-# Windows：
-copy .env.example .env
-# Mac / Linux：
-cp .env.example .env
+Copy-Item .env.example .env            # 後端
+Copy-Item frontend\.env.local.example frontend\.env.local   # 前端
 ```
 
-開啟 `.env`，依照下表填入：
+後端 `.env` 主要變數：
 
-| 變數 | 是否必填 | 說明 |
-|---|---|---|
-| `GEMINI_API_KEY` | **必填** | 見下方「取得 Gemini API Key」 |
-| `ADMIN_SECRET` | 建議填 | 任意字串即可，例如 `local-dev-123` |
-| `SMTP_PASSWORD` | **不需填** | 本地端繞過寄信流程（見下方說明） |
+| 變數 | 用途 |
+|------|------|
+| `GEMINI_API_KEY` | Gemini 金鑰（對話、報告、履歷解析） |
+| `GEMINI_MODEL` | 模型名稱，建議 `gemini-2.5-flash-lite`（較不易觸發流量限制） |
+| `USE_GEMINI_CHAT` | 設為 `1` 時本地以 Gemini 取代 Ollama，免安裝本地模型 |
+| `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` | Azure 語音服務（3D 模式 TTS），region 例如 `eastasia` |
+| `AZURE_SPEECH_VOICE` | 語音音色，例如 `zh-TW-HsiaoChenNeural` |
+| `LIVEAVATAR_API_KEY` / `LIVEAVATAR_AVATAR_ID` / `LIVEAVATAR_CONTEXT_ID` | 擬真面試官設定 |
+| `LIVEAVATAR_SANDBOX` | 設為 `1` 使用免費沙盒模式測試 |
+| `ALLOWED_ORIGINS` | CORS 允許來源，本地填 `http://localhost:3000,http://127.0.0.1:3000` |
 
-其餘變數保持 `.env.example` 的預設值即可。
+前端 `frontend/.env.local`：
 
-#### 取得 Gemini API Key
+| 變數 | 用途 |
+|------|------|
+| `NEXT_PUBLIC_API_URL` | 後端位址，本地為 `http://localhost:8001` |
+| `NEXT_PUBLIC_AVATAR_MODE` | 面試官模式：`3d`（自建）或 `heygen`（擬真） |
+| `NEXT_PUBLIC_AVATAR_GLB_URL` | 3D 模型路徑，例如 `/avatar-black.glb` |
 
-1. 前往 https://aistudio.google.com
-2. 登入 Google 帳號
-3. 點選左側「Get API Key」→「Create API Key」
-4. 複製產生的金鑰，貼入 `.env` 的 `GEMINI_API_KEY=` 後方
-
-免費方案即可使用，不需綁定信用卡。
-
----
-
-### Step 3：前端設定
-
+### 4. 前端環境
 ```bash
 cd frontend
 npm install
-
-# Windows：
-copy .env.local.example .env.local
-# Mac / Linux：
-cp .env.local.example .env.local
 ```
 
-`.env.local` 預設已指向 `http://localhost:8001`，本地開發**不需要修改**。
+### 5. 啟動（需同時運行前後端）
 
----
-
-### Step 4：啟動服務
-
-開啟**兩個**終端機視窗：
-
-**終端機 1 — 後端（在根目錄執行）：**
-
+**終端機 1 — 後端**（於專案根目錄、venv 啟用狀態）：
 ```bash
-python -m uvicorn Main:app --reload --port 8001 --env-file .env
+python -m uvicorn Main:app --reload --port 8001
 ```
 
-出現 `Application startup complete.` 即代表後端啟動成功。
-
-**終端機 2 — 前端（在 frontend/ 目錄執行）：**
-
+**終端機 2 — 前端**（於 frontend 資料夾）：
 ```bash
-cd frontend
 npm run dev
 ```
 
-瀏覽器開啟 `http://localhost:3000` 即可使用。
+兩者皆啟動後，瀏覽器開啟 `http://localhost:3000`。
 
-> **VS Code 使用者：** 按 `Ctrl+Shift+P` → `Run Task` → `Start All (Backend + Frontend)` 可一鍵同時啟動。
-
----
-
-### Step 5：測試帳號註冊流程（重要）
-
-本專案的信箱驗證功能依賴 Resend 服務，且寄件網域（`@cguimgraduatepj.me`）**僅限專案負責人的帳號才能使用**。其他開發者在本機測試時，系統雖然會完成帳號建立，但驗證信**不會寄出**，必須透過以下步驟手動開通帳號：
-
-**5-1. 先到前端正常操作「註冊」**
-
-填入 Email 與密碼後按下送出，系統回應「請至信箱驗證」即代表帳號已建立成功（忽略沒有收到信這件事）。
-
-**5-2. 用 DB Browser for SQLite 手動開通帳號**
-
-1. 開啟 DB Browser for SQLite
-2. 點選「Open Database」，選取專案根目錄的 `app.db`
-3. 切換到「Browse Data」頁籤，選擇 `user` 資料表
-4. 找到剛才註冊的 Email 那一列
-5. 將 `is_verified` 欄位的值從 `0` 改為 `1`
-6. 點選上方「Write Changes」儲存
-
-回到瀏覽器，即可用該帳號正常登入。
+> **首次使用**：註冊後需完成信箱驗證。本地若未設定寄信金鑰，驗證連結會直接印在後端終端機的 log（`🔗 驗證連結: ...`），複製至瀏覽器開啟即可完成驗證。
 
 ---
 
-### Step 6：Ollama 模型設定（AI 面試功能）
+## 五、使用流程
 
-> 此步驟僅影響 `/chat` AI 面試功能。跳過不影響登入、履歷評鑑等其他功能。
-
-**6-1. 下載模型檔案（約 4.6 GB）**
-
-前往以下連結下載 `llama-3-8b-instruct.Q4_K_M.gguf`：
-
-https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
-
-下載完成後將檔案**重新命名為** `llama-3-8b-instruct.Q4_K_M.gguf`，放至專案**根目錄**（與 `Modelfile` 同層）。
-
-**6-2. 建立 Ollama 模型**
-
-確認 Ollama 已在背景執行後，在根目錄執行：
-
-```bash
-ollama create my-career-coach -f Modelfile
-```
-
-出現 `success` 即完成設定。重新整理瀏覽器後 AI 面試功能即可使用。
+1. 註冊 / 登入 → 完成信箱驗證
+2.（選用）於「履歷健檢」上傳履歷 PDF 或手動填寫，供面試官出題參考
+3. 進入「AI 模擬面試」，選擇目標職位與應徵級別
+4. 與虛擬面試官進行對話（可用文字或語音）
+5. 結束面試，取得 AI 評估報告
+6. 於「面試歷史紀錄」回顧歷次評分與逐字稿
 
 ---
 
-## 功能測試對照表
+## 六、備註
 
-| 功能 | 本地可用 | 前置條件 | 注意事項 |
-|---|---|---|---|
-| 註冊帳號 | ✅ | 無 | 不會收到驗證信，需手動開通（Step 5） |
-| 登入 | ✅ | 帳號已手動開通 | 無 |
-| 履歷評鑑 | ✅ | 填入 `GEMINI_API_KEY` | 免費申請即可 |
-| AI 面試（/chat） | ✅ | 完成 Step 6 | 需下載 4.6 GB 模型 |
-| 信箱驗證信 | ❌ | 需 Resend 帳號與驗證網域 | 僅負責人可用，本地端以 Step 5 替代 |
-
----
-
-## 常見問題
-
-**Q：`pip install` 失敗或出現找不到套件的錯誤**
-
-確認 Python 版本為 3.10 以上，且虛擬環境已啟動——提示字元最前面應出現 `(.venv)`。
-
-**Q：後端啟動時出現 `GEMINI_API_KEY` 相關錯誤**
-
-`.env` 檔案中的 `GEMINI_API_KEY` 未填入，或金鑰格式錯誤。請重新確認 Step 2。
-
-**Q：`/chat` 功能回傳 500 錯誤**
-
-可能原因有二：
-1. Ollama 服務未在背景執行——開啟 Ollama 應用程式後再試
-2. `my-career-coach` 模型尚未建立——重新執行 Step 6-2
-
-**Q：DB Browser 找不到 `app.db`**
-
-後端至少要啟動過一次，`app.db` 才會自動產生。請先完成 Step 4 啟動後端，再回來做 Step 5。
+- 3D 模式使用之虛擬人模型放置於 `frontend/public/`（`.glb` 格式）。
+- 擬真模式的沙盒（Sandbox）session 有時間限制，屬服務端正常行為；正式展示需使用付費額度。
+- 本地開發使用 SQLite（`app.db`）；若變更資料表結構，需刪除 `app.db` 後重啟後端以重建。
