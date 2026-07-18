@@ -1,6 +1,5 @@
 "use client";
 // AuthPage.tsx — 「面試等候室」風格登入/註冊面板
-// 邏輯與原版完全相同(handleSubmit、sessionStorage、錯誤處理皆未更動),僅調整外觀。
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -17,6 +16,15 @@ function translateAuthError(message: string): string {
   }
   if (lower.includes("email not confirmed")) {
     return "此帳號尚未完成信件驗證，請先至信箱點擊驗證連結。";
+  }
+  if (lower.includes("password") && (lower.includes("least") || lower.includes("short") || lower.includes("weak"))) {
+    return "密碼強度不足，請至少輸入 6 個字元。";
+  }
+  if (lower.includes("rate limit") || lower.includes("too many") || lower.includes("after")) {
+    return "操作過於頻繁，請稍後再試一次。";
+  }
+  if (lower.includes("unable to validate email") || lower.includes("invalid email")) {
+    return "Email 格式不正確，請重新確認。";
   }
   return message;
 }
@@ -50,12 +58,27 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: Us
 
         if (data.user) {
           onLoginSuccess({ id: data.user.id, email: data.user.email ?? email });
+        } else {
+          setError("登入失敗，請再試一次。");
         }
       } else if (mode === "register") {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
 
         if (error) {
           setError(translateAuthError(error.message));
+          return;
+        }
+
+        // Supabase 為防止帳號枚舉攻擊，對「已註冊且已驗證」的 email 重複註冊時
+        // 不會回傳 error，而是回傳成功但 identities 為空陣列，須由此判斷是否為舊帳號
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          setError("此 Email 已被註冊，請直接登入或使用忘記密碼功能。");
+          return;
+        }
+
+        // 若專案設定為「免信箱驗證」(auto-confirm)，signUp 會直接帶回已登入的 session
+        if (data.session && data.user) {
+          onLoginSuccess({ id: data.user.id, email: data.user.email ?? email });
           return;
         }
 
