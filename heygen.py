@@ -12,7 +12,10 @@
 import os
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+import Model
+from auth import get_current_user
 
 router = APIRouter(prefix="/heygen", tags=["heygen"])
 
@@ -20,8 +23,9 @@ LIVEAVATAR_API = "https://api.liveavatar.com/v2/embeddings"
 
 
 @router.post("/embed")
-def create_embed():
-    """建立一個 LiveAvatar embed,回傳 iframe 用的網址。"""
+def create_embed(user: Model.User = Depends(get_current_user)):
+    """建立一個 LiveAvatar embed,回傳 iframe 用的網址。
+    此端點會消耗 LiveAvatar 付費額度，要求登入身份是為了避免被外部濫用刷額度。"""
     api_key = os.getenv("LIVEAVATAR_API_KEY")
     avatar_id = os.getenv("LIVEAVATAR_AVATAR_ID")
     context_id = os.getenv("LIVEAVATAR_CONTEXT_ID")
@@ -36,7 +40,8 @@ def create_embed():
     payload = {"avatar_id": avatar_id, "is_sandbox": is_sandbox}
     if context_id:
         payload["context_id"] = context_id
-        voice_id = os.getenv("LIVEAVATAR_VOICE_ID")
+
+    voice_id = os.getenv("LIVEAVATAR_VOICE_ID")
     if voice_id:
         payload["voice_id"] = voice_id
 

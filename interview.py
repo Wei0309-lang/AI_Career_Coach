@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from google import genai
 
 import Model
-from Database import SessionLocal
+from auth import get_db, get_current_user
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
 
@@ -27,14 +27,6 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 VALID_POSITIONS = ["前端工程師", "後端工程師", "資安工程師", "全端工程師"]
 VALID_LEVELS = ["實習生", "新鮮人", "資深工程師"]
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def build_system_prompt(user, position: str, level: str) -> str:
@@ -66,22 +58,21 @@ def build_system_prompt(user, position: str, level: str) -> str:
 
 # ---------- 開始面試 ----------
 class StartRequest(BaseModel):
-    user_id: str
     position: str
     level: str
 
 
 @router.post("/start")
-def start_interview(req: StartRequest, db: Session = Depends(get_db)):
+def start_interview(
+    req: StartRequest,
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     if req.position not in VALID_POSITIONS or req.level not in VALID_LEVELS:
         raise HTTPException(status_code=400, detail="無效的職位或級別")
 
-    user = db.query(Model.User).filter(Model.User.id == req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="使用者不存在")
-
     session = Model.InterviewSession(
-        user_id=req.user_id, position=req.position, level=req.level
+        user_id=user.id, position=req.position, level=req.level
     )
     db.add(session)
     db.commit()
@@ -99,7 +90,7 @@ def start_interview(req: StartRequest, db: Session = Depends(get_db)):
         opening = "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
 
     db.add(Model.ChatMessage(
-        user_id=req.user_id, role="assistant", content=opening,
+        user_id=user.id, role="assistant", content=opening,
         session_id=session.id,
     ))
     db.commit()
@@ -110,21 +101,22 @@ def start_interview(req: StartRequest, db: Session = Depends(get_db)):
 # ---------- 場次內對話 ----------
 class InterviewChatRequest(BaseModel):
     session_id: str
-    user_id: str
     message: str
 
 
 @router.post("/chat")
-def interview_chat(req: InterviewChatRequest, db: Session = Depends(get_db)):
+def interview_chat(
+    req: InterviewChatRequest,
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     session = db.query(Model.InterviewSession).filter(
         Model.InterviewSession.id == req.session_id
     ).first()
-    if not session or session.user_id != req.user_id:
+    if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="面試場次不存在")
     if session.status != "active":
         raise HTTPException(status_code=400, detail="此面試已結束")
-
-    user = db.query(Model.User).filter(Model.User.id == req.user_id).first()
 
     # 場次內的歷史對話(最多取近 20 則,控制 token)
     history = db.query(Model.ChatMessage).filter(
@@ -136,7 +128,7 @@ def interview_chat(req: InterviewChatRequest, db: Session = Depends(get_db)):
     )
 
     db.add(Model.ChatMessage(
-        user_id=req.user_id, role="user", content=req.message,
+        user_id=user.id, role="user", content=req.message,
         session_id=req.session_id,
     ))
 
@@ -154,7 +146,7 @@ def interview_chat(req: InterviewChatRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
 
     db.add(Model.ChatMessage(
-        user_id=req.user_id, role="assistant", content=ai_response,
+        user_id=user.id, role="assistant", content=ai_response,
         session_id=req.session_id,
     ))
     db.commit()
@@ -164,7 +156,6 @@ def interview_chat(req: InterviewChatRequest, db: Session = Depends(get_db)):
 # ---------- 結束面試 → 生成報告 ----------
 class FinishRequest(BaseModel):
     session_id: str
-    user_id: str
 
 
 REPORT_SCHEMA_HINT = """{
@@ -181,11 +172,15 @@ REPORT_SCHEMA_HINT = """{
 
 
 @router.post("/finish")
-def finish_interview(req: FinishRequest, db: Session = Depends(get_db)):
+def finish_interview(
+    req: FinishRequest,
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     session = db.query(Model.InterviewSession).filter(
         Model.InterviewSession.id == req.session_id
     ).first()
-    if not session or session.user_id != req.user_id:
+    if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="面試場次不存在")
 
     history = db.query(Model.ChatMessage).filter(
@@ -230,10 +225,13 @@ def finish_interview(req: FinishRequest, db: Session = Depends(get_db)):
 
 
 # ---------- 歷史紀錄 ----------
-@router.get("/history/{user_id}")
-def interview_history(user_id: str, db: Session = Depends(get_db)):
+@router.get("/history")
+def interview_history(
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     sessions = db.query(Model.InterviewSession).filter(
-        Model.InterviewSession.user_id == user_id,
+        Model.InterviewSession.user_id == user.id,
         Model.InterviewSession.status == "finished",
     ).order_by(Model.InterviewSession.created_at.desc()).all()
 
@@ -252,11 +250,15 @@ def interview_history(user_id: str, db: Session = Depends(get_db)):
 
 # ---------- 單場詳細報告與逐字稿 ----------
 @router.get("/detail/{session_id}")
-def interview_detail(session_id: str, user_id: str, db: Session = Depends(get_db)):
+def interview_detail(
+    session_id: str,
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     session = db.query(Model.InterviewSession).filter(
         Model.InterviewSession.id == session_id
     ).first()
-    if not session or session.user_id != user_id:
+    if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="面試場次不存在")
 
     messages = db.query(Model.ChatMessage).filter(

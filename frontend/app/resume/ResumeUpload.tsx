@@ -1,19 +1,20 @@
 "use client";
-// ResumeUpload.tsx — 履歷 PDF 上傳與 AI 自動解析
-// 放在 frontend/app/resume/ 資料夾,在履歷頁表單上方加入:
-//   <ResumeUpload userId={userId} onParsed={() => window.location.reload()} />
+// ResumeUpload.tsx — 履歷 PDF 上傳與 AI 自動解析(Gemini 原生解析 PDF)
+// 目前尚未掛載於任何頁面；/api/resume/upload 已改為 JWT 驗證身份，
+// 若要在其他畫面使用本元件，直接引入即可，不需再傳入 userId。
+//   <ResumeUpload onParsed={() => window.location.reload()} />
 // (onParsed 觸發重新整理,頁面原有的「載入既有履歷」邏輯會自動把解析結果填入表單)
 
 import { useRef, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 interface Props {
-  userId: string;
   onParsed?: () => void;
 }
 
-export default function ResumeUpload({ userId, onParsed }: Props) {
+export default function ResumeUpload({ onParsed }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string>("");
@@ -32,12 +33,18 @@ export default function ResumeUpload({ userId, onParsed }: Props) {
     setUploading(true);
     setMessage("");
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setMessage("❌ 尚未登入");
+        return;
+      }
+
       const form = new FormData();
-      form.append("user_id", userId);
       form.append("file", file);
 
       const res = await fetch(`${BACKEND_URL}/api/resume/upload`, {
         method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}` },
         body: form, // multipart:不要手動設 Content-Type,瀏覽器會自帶 boundary
       });
       const data = await res.json();

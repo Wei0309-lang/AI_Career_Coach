@@ -4,8 +4,19 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Container from "react-bootstrap/Container";
+import AuthGuard from "../components/AuthGuard";
+import { supabase } from "../lib/supabaseClient";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+
+// 每次呼叫受保護的後端 API 前，即時取用 Supabase session 的 JWT
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error("尚未登入");
+  }
+  return { "Authorization": `Bearer ${session.access_token}` };
+}
 
 interface SessionSummary {
   session_id: string;
@@ -31,10 +42,8 @@ interface Detail {
   transcript: { role: string; content: string }[];
 }
 
-export default function RecordsPage() {
+function RecordsPageContent() {
   const router = useRouter();
-  const [isAuth, setIsAuth] = useState(false);
-  const [userId, setUserId] = useState("");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,28 +54,20 @@ export default function RecordsPage() {
   const [showTranscript, setShowTranscript] = useState(false);
 
   useEffect(() => {
-    const storedUser = sessionStorage.getItem("user");
-    if (!storedUser) {
-      router.replace("/");
-      return;
-    }
-    try {
-      const user = JSON.parse(storedUser);
-      if (!user?.id) {
-        router.replace("/");
-        return;
+    (async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/interview/history`, {
+          headers: await authHeaders(),
+        });
+        const d = await res.json();
+        setSessions(d.sessions || []);
+      } catch (e) {
+        console.error("讀取紀錄失敗:", e);
+      } finally {
+        setLoading(false);
       }
-      setUserId(user.id);
-      setIsAuth(true);
-      fetch(`${BACKEND_URL}/api/interview/history/${user.id}`)
-        .then((r) => r.json())
-        .then((d) => setSessions(d.sessions || []))
-        .catch((e) => console.error("讀取紀錄失敗:", e))
-        .finally(() => setLoading(false));
-    } catch {
-      router.replace("/");
-    }
-  }, [router]);
+    })();
+  }, []);
 
   // 點擊卡片:展開/收合,首次展開時抓取詳細報告
   const toggleDetail = async (sessionId: string) => {
@@ -80,7 +81,8 @@ export default function RecordsPage() {
       setDetailLoading(true);
       try {
         const res = await fetch(
-          `${BACKEND_URL}/api/interview/detail/${sessionId}?user_id=${userId}`
+          `${BACKEND_URL}/api/interview/detail/${sessionId}`,
+          { headers: await authHeaders() }
         );
         if (res.ok) {
           const d = await res.json();
@@ -93,14 +95,6 @@ export default function RecordsPage() {
       }
     }
   };
-
-  if (!isAuth) {
-    return (
-      <div className="studio-bg d-flex justify-content-center align-items-center">
-        <div className="studio-dim">安全性驗證中...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="studio-bg">
@@ -230,5 +224,19 @@ export default function RecordsPage() {
         })}
       </Container>
     </div>
+  );
+}
+
+export default function RecordsPage() {
+  return (
+    <AuthGuard
+      fallback={
+        <div className="studio-bg d-flex justify-content-center align-items-center">
+          <div className="studio-dim">安全性驗證中...</div>
+        </div>
+      }
+    >
+      <RecordsPageContent />
+    </AuthGuard>
   );
 }

@@ -7,13 +7,13 @@
 import json
 import os
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from google import genai
 from google.genai import types
 
 import Model
-from Database import SessionLocal
+from auth import get_db, get_current_user
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 
@@ -23,25 +23,13 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB 上限,防止濫用
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.post("/upload")
 async def upload_resume(
-    user_id: str = Form(...),
     file: UploadFile = File(...),
+    user: Model.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """上傳履歷 PDF → Gemini 解析 → 自動填入使用者履歷欄位。"""
-    user = db.query(Model.User).filter(Model.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="使用者不存在")
-
     if file.content_type not in ("application/pdf",):
         raise HTTPException(status_code=400, detail="請上傳 PDF 檔案")
 

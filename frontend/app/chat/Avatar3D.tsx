@@ -11,6 +11,7 @@
 // 依賴:npm install three @met4citizen/talkinghead
 
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 // Ready Player Me 模型網址。querystring 的 morphTargets 參數是關鍵:
 // 沒有 Oculus Visemes 這組 blendshape,嘴巴就動不了。
@@ -119,10 +120,16 @@ export default function Avatar3D({ message }: Props) {
       // 面試者剛按 Enter 送訊息,算互動,這裡 resume 一定成功。
       await head.audioCtx?.resume?.();
 
-      // 1️⃣ 向後端取得語音 + 嘴型時間軸
+      // 1️⃣ 向後端取得語音 + 嘴型時間軸(需帶登入憑證，後端據此驗證身份)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("尚未登入");
+
       const res = await fetch(`${BACKEND_URL}/avatar/tts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ text }),
       });
       if (!res.ok) throw new Error(`TTS API 錯誤: ${res.status}`);

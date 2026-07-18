@@ -13,9 +13,12 @@
 import os
 import base64
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import azure.cognitiveservices.speech as speechsdk
+
+import Model
+from auth import get_current_user
 
 router = APIRouter(prefix="/avatar", tags=["avatar"])
 
@@ -25,8 +28,9 @@ class TTSRequest(BaseModel):
 
 
 @router.post("/tts")
-def synthesize_speech(req: TTSRequest):
-    """把文字轉成語音(base64 mp3)+ viseme 嘴型時間軸。"""
+def synthesize_speech(req: TTSRequest, user: Model.User = Depends(get_current_user)):
+    """把文字轉成語音(base64 mp3)+ viseme 嘴型時間軸。
+    此端點會消耗 Azure Speech 額度，要求登入身份是為了避免被外部濫用刷額度。"""
     text = (req.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="text 不可為空")

@@ -7,6 +7,7 @@
 // 使用者直接對著它「講話」互動,不走我們自己的 /chat 文字流程。
 
 import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
@@ -19,8 +20,12 @@ export default function HeyGenAvatar() {
     let cancelled = false;
     (async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("尚未登入");
+
         const res = await fetch(`${BACKEND_URL}/heygen/embed`, {
           method: "POST",
+          headers: { "Authorization": `Bearer ${session.access_token}` },
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));

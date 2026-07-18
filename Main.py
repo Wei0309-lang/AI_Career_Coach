@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -8,10 +8,9 @@ from ollama import AsyncClient
 from google import genai
 from pypdf import PdfReader
 from docx import Document
-import jwt
-from jwt import PyJWKClient
 import Model
-from Database import SessionLocal, engine
+from Database import engine
+from auth import get_db, get_current_user
 import os
 import io
 import json
@@ -31,23 +30,9 @@ gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "my-career-coach")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 MAX_RESUME_UPLOAD_MB = int(os.getenv("MAX_RESUME_UPLOAD_MB", "10"))
-
-# Supabase 目前用非對稱金鑰（ES256）簽發 JWT，改用 JWKS 端點動態抓公鑰驗證，
-# 不需要再保管共享密鑰；PyJWKClient 內建快取，不會每次請求都重打一次端點
-_jwks_client: PyJWKClient | None = None
-
-
-def _get_jwks_client() -> PyJWKClient:
-    global _jwks_client
-    if _jwks_client is None:
-        if not SUPABASE_URL:
-            raise HTTPException(status_code=500, detail="伺服器未設定 SUPABASE_URL")
-        _jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
-    return _jwks_client
 
 # 升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
 app.add_middleware(
@@ -72,52 +57,6 @@ class ResumeData(BaseModel):
     summary: str
     skills: str
     experience: str
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> Model.User:
-    """驗證 Supabase 簽發的 JWT（Authorization: Bearer <token>），
-    並取得（或建立）對應的本地使用者資料列。取代舊版直接信任前端傳入 user_id 的作法。"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="缺少身份驗證憑證")
-
-    token = authorization.removeprefix("Bearer ").strip()
-
-    try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["ES256"],
-            audience="authenticated",
-        )
-    except HTTPException:
-        raise
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="憑證無效或已過期")
-    except Exception as e:
-        print(f"JWKS 驗證發生非預期錯誤: {e}")
-        raise HTTPException(status_code=500, detail="無法驗證身份憑證，請稍後再試")
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="憑證缺少使用者資訊")
-
-    user = db.query(Model.User).filter(Model.User.id == user_id).first()
-    if not user:
-        # 使用者是在 Supabase 端完成註冊，本地資料庫尚無對應資料列時，
-        # 在第一次呼叫受保護 API 時建立履歷資料列（get-or-create）
-        user = Model.User(id=user_id, email=payload.get("email"))
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    return user
 
 
 # 「重置資料庫」的 API (用來解決舊欄位衝突)
