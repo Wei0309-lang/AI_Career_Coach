@@ -1,4 +1,6 @@
 "use client";
+// app/(InitialPage)/page.tsx — 首頁(登入前/後)
+// 邏輯與原版完全相同(sessionStorage 檢查、登入/登出處理皆未更動),僅調整外觀。
 import { useState, useEffect } from "react";
 import AuthPage from "../AuthPage/AuthPage";
 import MainButton from "./MainButton";
@@ -34,31 +36,41 @@ export default function Dashboard() {
 
   if (checking) {
     return (
-      <div className="min-vh-100 bg-primary-subtle d-flex justify-content-center align-items-center">
-        <div className="text-dark">載入中...</div>
+      <div className="studio-bg d-flex justify-content-center align-items-center">
+        <div className="studio-dim">載入中...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-vh-100 bg-primary-subtle d-flex flex-column">
-      <div className="container py-5 text-center flex-grow-1">
+    <div className="studio-bg d-flex flex-column">
+      <div className="container py-5 text-center flex-grow-1 d-flex flex-column justify-content-center">
         {!user ? (
-          <div className="d-flex flex-column align-items-center mt-5">
-            <h2 className="mb-4 text-dark">歡迎使用 AI 職涯導師，請先登入</h2>
+          <div className="d-flex flex-column align-items-center">
+            <span className="studio-eyebrow mb-2">AI Career Coach</span>
+            <h2 className="studio-title mb-4">歡迎使用 AI 職涯導師</h2>
             <AuthPage onLoginSuccess={handleLogin} />
           </div>
         ) : (
-          <div className="mt-5">
-            <h1 className="display-4 text-primary fw-bold">您的 AI 職涯導師</h1>
-            <p className="lead mt-3 text-secondary">您好 {user.email}，準備好開始面試了嗎？</p>
+          <div>
+            <span className="studio-eyebrow">AI Career Coach</span>
+            <h1
+              className="studio-title mt-2"
+              style={{ fontSize: "clamp(2rem, 5vw, 3.2rem)" }}
+            >
+              您的 AI 職涯導師
+            </h1>
+            <p className="studio-dim mt-3">
+              您好 <span style={{ color: "var(--studio-text)" }}>{user.email}</span>
+              ，準備好開始面試了嗎？
+            </p>
 
             {/* 畫面中央的功能按鈕群組，履歷健檢已內嵌於此元件內部 */}
             <div className="mt-5">
               <MainButton />
             </div>
 
-            <button onClick={handleLogout} className="btn btn-outline-secondary btn-sm mt-5">
+            <button onClick={handleLogout} className="btn btn-studio-ghost btn-sm mt-5 px-4">
               登出系統
             </button>
           </div>

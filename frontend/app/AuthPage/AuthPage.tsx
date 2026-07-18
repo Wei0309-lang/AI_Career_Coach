@@ -1,4 +1,6 @@
 "use client";
+// AuthPage.tsx — 「面試等候室」風格登入/註冊面板
+// 邏輯與原版完全相同(handleSubmit、sessionStorage、錯誤處理皆未更動),僅調整外觀。
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -76,54 +78,87 @@ export default function AuthPage({ onLoginSuccess }: { onLoginSuccess: (user: Us
     }
   };
 
-  const titleMap: Record<Mode, string> = {
-    login: "登入",
-    register: "註冊",
-    forgot: "忘記密碼",
+  const subtitleMap: Record<Mode, string> = {
+    login: "登入後即可開始您的模擬面試",
+    register: "註冊後請至信箱點擊驗證信啟用帳號",
+    forgot: "輸入註冊時使用的 Email，我們會寄送重設密碼的連結",
   };
 
   return (
-    <div className="card p-4 shadow-sm" style={{ width: "400px" }}>
-      <h3 className="text-center mb-4">{titleMap[mode]}</h3>
+    <div className="studio-panel p-4 p-md-5" style={{ width: "100%", maxWidth: "420px" }}>
+      <div className="text-center mb-4">
+        <span className="studio-eyebrow">Interview Room</span>
+        <h3 className="studio-title mt-2 mb-1">
+          {mode === "login" ? "進入面試室" : mode === "register" ? "建立帳號" : "忘記密碼"}
+        </h3>
+        <p className="studio-dim small mb-0">{subtitleMap[mode]}</p>
+      </div>
+
       <form onSubmit={handleSubmit}>
         <input
-          type="email" placeholder="Email" className="form-control mb-2"
+          type="email" placeholder="Email" className="form-control studio-input mb-3"
           value={email} onChange={(e) => setEmail(e.target.value)} required
         />
         {mode !== "forgot" && (
           <input
-            type="password" placeholder="密碼" className="form-control mb-3"
+            type="password" placeholder="密碼" className="form-control studio-input mb-4"
             value={password} onChange={(e) => setPassword(e.target.value)} required
           />
         )}
-        <button className="btn btn-primary w-full mb-2">
+        <button className="btn btn-studio w-100 mb-2">
           {mode === "login" ? "進入系統" : mode === "register" ? "立即註冊" : "寄送重設密碼信件"}
         </button>
       </form>
 
-      {error && <p className="text-danger text-sm">{error}</p>}
-      {notice && <p className="text-success text-sm">{notice}</p>}
+      {error && (
+        <p className="small text-center mt-2 mb-0" style={{ color: "var(--studio-rec)" }}>
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="small text-center mt-2 mb-0" style={{ color: "var(--studio-accent)" }}>
+          {notice}
+        </p>
+      )}
 
-      {mode === "login" && (
-        <div className="d-flex flex-column">
-          <button onClick={() => switchMode("register")} className="btn btn-link btn-sm">
-            沒有帳號？去註冊
+      <div className="text-center mt-3 d-flex flex-column gap-1">
+        {mode === "login" && (
+          <>
+            <button
+              onClick={() => switchMode("register")}
+              className="btn btn-link btn-sm text-decoration-none"
+              style={{ color: "var(--studio-accent)" }}
+            >
+              沒有帳號？去註冊
+            </button>
+            <button
+              onClick={() => switchMode("forgot")}
+              className="btn btn-link btn-sm text-decoration-none"
+              style={{ color: "var(--studio-accent)" }}
+            >
+              忘記密碼？
+            </button>
+          </>
+        )}
+        {mode === "register" && (
+          <button
+            onClick={() => switchMode("login")}
+            className="btn btn-link btn-sm text-decoration-none"
+            style={{ color: "var(--studio-accent)" }}
+          >
+            已有帳號？去登入
           </button>
-          <button onClick={() => switchMode("forgot")} className="btn btn-link btn-sm">
-            忘記密碼？
+        )}
+        {mode === "forgot" && (
+          <button
+            onClick={() => switchMode("login")}
+            className="btn btn-link btn-sm text-decoration-none"
+            style={{ color: "var(--studio-accent)" }}
+          >
+            返回登入
           </button>
-        </div>
-      )}
-      {mode === "register" && (
-        <button onClick={() => switchMode("login")} className="btn btn-link btn-sm">
-          已有帳號？去登入
-        </button>
-      )}
-      {mode === "forgot" && (
-        <button onClick={() => switchMode("login")} className="btn btn-link btn-sm">
-          返回登入
-        </button>
-      )}
+        )}
+      </div>
     </div>
   );
 }

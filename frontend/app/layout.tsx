@@ -25,6 +25,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+    <head>
+        <script
+          type="importmap"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              imports: {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+                "talkinghead": "https://cdn.jsdelivr.net/npm/@met4citizen/talkinghead@1.7.0/modules/talkinghead.mjs"
+              }
+            })
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

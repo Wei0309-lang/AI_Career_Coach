@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -13,6 +15,10 @@ from Database import SessionLocal, engine
 import os
 import io
 import json
+from avatar import router as avatar_router
+from heygen import router as heygen_router
+from interview import router as interview_router
+from resume_upload import router as resume_upload_router
 
 
 # 自動建立資料表
@@ -53,6 +59,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(avatar_router)
+app.include_router(heygen_router)
+app.include_router(interview_router)
+app.include_router(resume_upload_router)
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -68,7 +79,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 def get_current_user(authorization: str = Header(None), db: Session = Depends(get_db)) -> Model.User:
     """驗證 Supabase 簽發的 JWT（Authorization: Bearer <token>），
@@ -140,7 +150,6 @@ def get_resume(user: Model.User = Depends(get_current_user)):
         "skills": user.skills or "",
         "experience": user.experience or ""
     }
-
 
 def _extract_text_from_pdf(content: bytes) -> str:
     reader = PdfReader(io.BytesIO(content))
@@ -230,6 +239,8 @@ def submit_resume(data: ResumeData, user: Model.User = Depends(get_current_user)
 
     prompt = f"""你是一位專業的履歷顧問。請根據以下這份履歷,給出具體、可執行的改善建議。
 請用繁體中文,條列 3-5 點重點,語氣專業但友善。
+輸出純文字即可:不要使用任何 Markdown 符號(如 **、*、#、`),
+條列請直接用「1. 2. 3.」與「・」,重點詞彙不需要加粗。
 
 【個人簡介】
 {data.summary}
@@ -307,6 +318,33 @@ async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_cur
     db.add(new_user_msg)
 
     try:
+        # 🆕 ============================================================
+        # 本地開發模式：.env 設 USE_GEMINI_CHAT=1 時改用 Gemini 回覆，
+        # 不需要安裝 Ollama。Render 雲端沒設此變數，會自動跳過這一段、
+        # 照常執行下方原本的 Ollama 邏輯（原始程式碼完整保留，未刪除）。
+        # ============================================================
+        if os.getenv("USE_GEMINI_CHAT", "0") == "1":
+            convo = "\n".join(
+                ("面試者：" if m["role"] == "user" else "面試官：") + m["content"]
+                for m in messages_payload[1:]
+            )
+            g = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=system_prompt
+                + "\n\n以下是目前的對話，請以面試官身分回覆最後一則，只輸出面試官要說的話：\n"
+                + convo,
+            )
+            ai_response = (g.text or "").strip()
+            if not ai_response:
+                ai_response = "（面試官正看著你，似乎在等待更具體的回答...）"
+
+            new_ai_msg = Model.ChatMessage(user_id=user.id, role="assistant", content=ai_response)
+            db.add(new_ai_msg)
+            db.commit()
+
+            return {"response": ai_response}
+        # 🆕 ===================== Gemini 分支結束 =====================
+
         ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
         client = AsyncClient(host=ollama_host)
 
@@ -339,4 +377,4 @@ async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_cur
     except Exception as e:
         db.rollback() # 發生錯誤時回滾
         print(f"❌ 發生錯誤: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ollama 連線失敗: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {str(e)}")
