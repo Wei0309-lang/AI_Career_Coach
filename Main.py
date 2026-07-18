@@ -3,7 +3,7 @@ load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from ollama import AsyncClient
 from google import genai
 from pypdf import PdfReader
@@ -18,6 +18,7 @@ from avatar import router as avatar_router
 from heygen import router as heygen_router
 from interview import router as interview_router
 from resume_upload import router as resume_upload_router
+from resume_utils import flatten_resume_value
 
 
 # 自動建立資料表
@@ -57,6 +58,13 @@ class ResumeData(BaseModel):
     summary: str
     skills: str
     experience: str
+
+    # 儲存履歷是系統邊界，不管上游(舊的前端快取狀態、AI 解析結果等)送來
+    # 陣列/物件/null，一律攤平成文字，避免直接 422 擋下使用者的儲存操作
+    @field_validator("fullName", "summary", "skills", "experience", mode="before")
+    @classmethod
+    def _coerce_to_text(cls, v):
+        return flatten_resume_value(v)
 
 
 # 「重置資料庫」的 API (用來解決舊欄位衝突)
@@ -136,6 +144,8 @@ async def parse_resume_file(file: UploadFile = File(...), user: Model.User = Dep
 
     prompt = f"""你是一個履歷資料整理助手。請將以下履歷原文整理成 JSON 格式，欄位為：
 fullName（姓名）、summary（個人簡介）、skills（專業技能）、experience（工作/專案經歷）。
+每個欄位的值都必須是「單一純文字字串」，不可以是陣列或巢狀物件；
+多筆技能或多段經歷請自行整理成一段連貫文字（可用頓號、換行分隔），不要拆成 JSON 陣列或子物件。
 若原文中找不到某欄位對應的資訊，該欄位請回傳空字串。
 只回傳 JSON 本身，不要加上任何說明文字或 markdown 標記。
 
@@ -159,10 +169,10 @@ fullName（姓名）、summary（個人簡介）、skills（專業技能）、ex
         raise HTTPException(status_code=502, detail="AI 解析履歷內容失敗，請稍後再試")
 
     return {
-        "fullName": parsed.get("fullName", "") or "",
-        "summary": parsed.get("summary", "") or "",
-        "skills": parsed.get("skills", "") or "",
-        "experience": parsed.get("experience", "") or "",
+        "fullName": flatten_resume_value(parsed.get("fullName")),
+        "summary": flatten_resume_value(parsed.get("summary")),
+        "skills": flatten_resume_value(parsed.get("skills")),
+        "experience": flatten_resume_value(parsed.get("experience")),
     }
 
 

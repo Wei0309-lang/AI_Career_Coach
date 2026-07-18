@@ -14,6 +14,7 @@ from google.genai import types
 
 import Model
 from auth import get_db, get_current_user
+from resume_utils import flatten_resume_value
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 
@@ -66,10 +67,10 @@ async def upload_resume(
         raise HTTPException(status_code=500, detail=f"AI 解析失敗: {e}")
 
     # 寫入使用者履歷欄位(與手動填表共用同一組欄位)
-    user.full_name = parsed.get("fullName", "") or user.full_name
-    user.summary = parsed.get("summary", "") or user.summary
-    user.skills = parsed.get("skills", "") or user.skills
-    user.experience = parsed.get("experience", "") or user.experience
+    user.full_name = flatten_resume_value(parsed.get("fullName")) or user.full_name
+    user.summary = flatten_resume_value(parsed.get("summary")) or user.summary
+    user.skills = flatten_resume_value(parsed.get("skills")) or user.skills
+    user.experience = flatten_resume_value(parsed.get("experience")) or user.experience
     db.commit()
 
     return {
