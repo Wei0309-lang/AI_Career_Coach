@@ -25,6 +25,9 @@ services:
         value: https://bytjopnahjdpzlmwmeea.supabase.co
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      # Render 上沒有安裝 Ollama，/chat 與 /api/interview/* 一律強制走 Gemini
+      - key: USE_GEMINI_CHAT
+        value: "1"
       - key: OLLAMA_MODEL
         value: my-career-coach
       - key: ALLOWED_ORIGINS

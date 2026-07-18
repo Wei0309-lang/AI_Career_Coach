@@ -4,7 +4,8 @@
 #   app.include_router(interview_router)
 #
 # 設計:每次面試是一個 InterviewSession(職位/難度/狀態/報告),
-# 對話記憶限定在場次內。全部走 Gemini(本地與雲端皆可用),
+# 對話記憶限定在場次內。預設走本地 Ollama 模型(方便之後替換成自行訓練的版本),
+# 雲端環境(如 Render,沒有安裝 Ollama)可設 USE_GEMINI_CHAT=1 切回 Gemini。
 # 原本的 /chat 端點完全不受影響。
 
 import json
@@ -16,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from google import genai
+from ollama import Client as OllamaClient
 
 import Model
 from auth import get_db, get_current_user
@@ -24,9 +26,30 @@ router = APIRouter(prefix="/api/interview", tags=["interview"])
 
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "my-career-coach")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 VALID_POSITIONS = ["前端工程師", "後端工程師", "資安工程師", "全端工程師"]
 VALID_LEVELS = ["實習生", "新鮮人", "資深工程師"]
+
+
+def generate_ai_text(prompt: str) -> str:
+    """依 USE_GEMINI_CHAT 決定用 Gemini 還是本地 Ollama 模型產生文字。
+    預設(USE_GEMINI_CHAT 未設定或非 "1")走 Ollama,之後要換成自己訓練的模型，
+    改 OLLAMA_MODEL 指到新的 Modelfile 名稱即可，不需要再改這支程式。"""
+    if os.getenv("USE_GEMINI_CHAT", "0") == "1":
+        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        return (g.text or "").strip()
+
+    client = OllamaClient(host=OLLAMA_HOST)
+    response = client.chat(
+        model=OLLAMA_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        options={"temperature": 0.3, "num_predict": 1024, "top_k": 40, "top_p": 0.9},
+    )
+    if "message" in response and "content" in response["message"]:
+        return (response["message"]["content"] or "").strip()
+    return ""
 
 
 def build_system_prompt(user, position: str, level: str) -> str:
@@ -84,8 +107,7 @@ def start_interview(
     然後請應徵者自我介紹。總共不超過三句話,只輸出你要說的話。
     """
     try:
-        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        opening = (g.text or "").strip() or "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
+        opening = generate_ai_text(prompt) or "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
     except Exception:
         opening = "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
 
@@ -139,8 +161,7 @@ def interview_chat(
         + "\n\n請以面試官身分回覆,只輸出面試官要說的話:"
     )
     try:
-        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        ai_response = (g.text or "").strip() or "(面試官正看著你,等待更具體的回答...)"
+        ai_response = generate_ai_text(prompt) or "(面試官正看著你,等待更具體的回答...)"
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
@@ -206,8 +227,7 @@ def finish_interview(
 {transcript}
 """
     try:
-        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-        raw = (g.text or "").strip()
+        raw = generate_ai_text(prompt)
         # 移除可能出現的 markdown 圍欄
         raw = raw.replace("```json", "").replace("```", "").strip()
         report = json.loads(raw)
