@@ -160,15 +160,17 @@ function ResumePageContent() {
         body: JSON.stringify(formData),
       });
 
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error("伺服器錯誤");
+        // 後端 detail 是給使用者看的中文訊息(例如 429「操作太頻繁，請約 N 秒後再試」)
+        setSuggestion(`❌ ${typeof data.detail === "string" ? data.detail : "儲存失敗，請稍後再試。"}`);
+        return;
       }
-      const data = await response.json();
       setSuggestion(data.suggestion);
       setSavedData(formData); // 送出成功，目前內容成為新的「已儲存」基準
       setUploadNotice("");
       setUploadError("");
-    } catch (err) {
+    } catch {
       setSuggestion("❌ 儲存失敗或 AI 健檢服務暫時無法使用，請檢查連線。");
     } finally {
       setLoading(false);

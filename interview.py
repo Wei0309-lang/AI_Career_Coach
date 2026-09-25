@@ -9,6 +9,7 @@
 # 原本的 /chat 端點完全不受影響。
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -22,9 +23,11 @@ from ollama import Client as OllamaClient
 
 import Model
 from auth import get_db, get_current_user
+from rate_limit import rate_limited
 from resume_utils import flatten_resume_value
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
+logger = logging.getLogger(__name__)
 
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -113,7 +116,7 @@ class StartRequest(BaseModel):
 @router.post("/start")
 def start_interview(
     req: StartRequest,
-    user: Model.User = Depends(get_current_user),
+    user: Model.User = Depends(rate_limited("interview_start")),
     db: Session = Depends(get_db),
 ):
     if req.position not in VALID_POSITIONS or req.level not in VALID_LEVELS:
@@ -141,6 +144,7 @@ def start_interview(
     try:
         opening = generate_ai_text(prompt) or "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
     except Exception:
+        logger.exception("產生面試開場白失敗，改用預設開場白")
         opening = "您好,我是林經理,今天由我負責您的技術面試。請先簡單自我介紹。"
 
     db.add(Model.ChatMessage(
@@ -161,7 +165,7 @@ class InterviewChatRequest(BaseModel):
 @router.post("/chat")
 def interview_chat(
     req: InterviewChatRequest,
-    user: Model.User = Depends(get_current_user),
+    user: Model.User = Depends(rate_limited("interview_chat")),
     db: Session = Depends(get_db),
 ):
     session = db.query(Model.InterviewSession).filter(
@@ -195,9 +199,10 @@ def interview_chat(
     )
     try:
         ai_response = generate_ai_text(prompt) or "(面試官正看著你,等待更具體的回答...)"
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
+        logger.exception("面試對話 AI 呼叫失敗")
+        raise HTTPException(status_code=500, detail="AI 服務連線失敗，請稍後再試")
 
     db.add(Model.ChatMessage(
         user_id=user.id, role="assistant", content=ai_response,
@@ -332,7 +337,7 @@ def load_report(report_json: str | None) -> dict | None:
 @router.post("/finish")
 def finish_interview(
     req: FinishRequest,
-    user: Model.User = Depends(get_current_user),
+    user: Model.User = Depends(rate_limited("interview_finish")),
     db: Session = Depends(get_db),
 ):
     session = db.query(Model.InterviewSession).filter(
@@ -376,12 +381,13 @@ def finish_interview(
     for attempt in range(1, REPORT_MAX_ATTEMPTS + 1):
         try:
             raw = generate_ai_text(prompt, system=REPORT_SYSTEM_PROMPT, json_mode=True)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
+        except Exception:
+            logger.exception("面試報告 AI 呼叫失敗")
+            raise HTTPException(status_code=500, detail="AI 服務連線失敗，請稍後再試")
         report = parse_report(raw)
         if report:
             break
-        print(f"報告格式解析失敗(第 {attempt} 次),模型原始輸出: {raw[:300]}")
+        logger.warning("報告格式解析失敗(第 %d 次),模型原始輸出: %s", attempt, raw[:300])
 
     if report is None:
         raise HTTPException(status_code=502, detail="報告格式解析失敗,請再試一次")

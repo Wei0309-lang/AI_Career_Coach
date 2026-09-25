@@ -9,21 +9,23 @@
 #   LIVEAVATAR_CONTEXT_ID   你建立的面試官人設(Context/Knowledge Base)的 ID
 #   LIVEAVATAR_SANDBOX      預設 1(沙盒模式,不扣 credits);正式 demo 才改 0
 
+import logging
 import os
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 
 import Model
-from auth import get_current_user
+from rate_limit import rate_limited
 
 router = APIRouter(prefix="/heygen", tags=["heygen"])
+logger = logging.getLogger(__name__)
 
 LIVEAVATAR_API = "https://api.liveavatar.com/v2/embeddings"
 
 
 @router.post("/embed")
-def create_embed(user: Model.User = Depends(get_current_user)):
+def create_embed(user: Model.User = Depends(rate_limited("heygen_embed"))):
     """建立一個 LiveAvatar embed,回傳 iframe 用的網址。
     此端點會消耗 LiveAvatar 付費額度，要求登入身份是為了避免被外部濫用刷額度。"""
     api_key = os.getenv("LIVEAVATAR_API_KEY")
@@ -55,14 +57,14 @@ def create_embed(user: Model.User = Depends(get_current_user)):
             json=payload,
             timeout=15,
         )
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"LiveAvatar 連線失敗: {e}")
+    except requests.RequestException:
+        logger.exception("LiveAvatar 連線失敗")
+        raise HTTPException(status_code=502, detail="擬真面試官服務連線失敗，請稍後再試")
 
     if resp.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LiveAvatar API 錯誤 {resp.status_code}: {resp.text[:300]}",
-        )
+        # 第三方 API 的原始回應可能含帳號/額度資訊，只寫進 log
+        logger.error("LiveAvatar API 錯誤 %s: %s", resp.status_code, resp.text[:300])
+        raise HTTPException(status_code=502, detail="擬真面試官服務暫時無法使用，請稍後再試")
 
     data = resp.json().get("data", {})
     url = data.get("url")

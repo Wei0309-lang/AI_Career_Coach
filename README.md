@@ -134,7 +134,7 @@ Copy-Item .env.example .env
 |---|---|---|
 | `GEMINI_API_KEY` | **必填** | 見下方「取得 Gemini API Key」 |
 | `SUPABASE_URL` | **必填** | Step 2 記下的 Supabase Project URL |
-| `ADMIN_SECRET` | 建議填 | 任意字串即可，用於 `/api/reset-db` |
+| `ADMIN_SECRET` | 建議填 | 任意字串即可，用於 `/api/reset-db`（另需 `ALLOW_DB_RESET=1` 才會開放，見常見問題） |
 | `MAX_RESUME_UPLOAD_MB` | 選填 | 履歷檔案大小上限（MB），不填預設 10 |
 | `USE_GEMINI_CHAT` | 選填 | 面試對話與 AI 報告預設走本地 Ollama；設為 `1` 改走 Gemini，免安裝本地模型（履歷評鑑/解析一律用 Gemini，不受此開關影響） |
 | `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` / `AZURE_SPEECH_VOICE` | 3D 模式必填 | Azure 語音服務金鑰、區域（如 `eastasia`）、音色 |
@@ -284,11 +284,16 @@ ollama create my-career-coach -f Modelfile
 
 **Q：`/api/resume` 回傳 500，錯誤訊息提到 `NOT NULL constraint failed`；或「開始面試」按下去瀏覽器顯示 CORS 錯誤，但後端 log 其實是 `no column named session_id`**
 
-兩者都代表本機 `app.db` 是合併前的舊版 schema（帶有 `is_verified`、`password_hash` 等舊欄位，或缺少 `chat_messages.session_id`）。`create_all` 只會新增不存在的資料表，不會幫舊表補欄位，所以要手動重置。呼叫以下網址即可（只會清空本機測試資料與履歷/面試紀錄，**不會影響 Supabase 帳號**，不需要重新註冊,但要重新登入）：
+兩者都代表本機 `app.db` 是合併前的舊版 schema（帶有 `is_verified`、`password_hash` 等舊欄位，或缺少 `chat_messages.session_id`）。`create_all` 只會新增不存在的資料表，不會幫舊表補欄位，所以要手動重置（只會清空本機測試資料與履歷/面試紀錄，**不會影響 Supabase 帳號**，不需要重新註冊,但要重新登入）：
 
-```
-http://localhost:8001/api/reset-db?secret=<你的 ADMIN_SECRET>
-```
+1. `.env` 暫時加上 `ALLOW_DB_RESET=1`，重啟後端（沒開這個開關時 `/api/reset-db` 一律回 404）
+2. 用 POST 並把 secret 放在 header 呼叫：
+   ```
+   curl -X POST http://localhost:8001/api/reset-db -H "X-Admin-Secret: <你的 ADMIN_SECRET>"
+   ```
+3. 重置完把 `ALLOW_DB_RESET` 刪掉或改回 `0`，再重啟後端
+
+正式環境（Render）也是同樣步驟：在 Render 的 Environment 暫時加 `ALLOW_DB_RESET=1`，呼叫完立刻移除。
 
 > 補充：瀏覽器主控台把這類未捕捉的後端例外顯示成「CORS policy 封鎖」是正常現象——未捕捉的例外會跳過 CORS middleware，回應沒有 CORS header，瀏覽器就會誤判成 CORS 問題。遇到類似訊息時，先去看後端終端機的實際 log 找真正的例外。
 

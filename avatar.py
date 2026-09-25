@@ -12,15 +12,17 @@
 
 import os
 import base64
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import azure.cognitiveservices.speech as speechsdk
 
 import Model
-from auth import get_current_user
+from rate_limit import rate_limited
 
 router = APIRouter(prefix="/avatar", tags=["avatar"])
+logger = logging.getLogger(__name__)
 
 
 class TTSRequest(BaseModel):
@@ -28,7 +30,7 @@ class TTSRequest(BaseModel):
 
 
 @router.post("/tts")
-def synthesize_speech(req: TTSRequest, user: Model.User = Depends(get_current_user)):
+def synthesize_speech(req: TTSRequest, user: Model.User = Depends(rate_limited("tts"))):
     """把文字轉成語音(base64 mp3)+ viseme 嘴型時間軸。
     此端點會消耗 Azure Speech 額度，要求登入身份是為了避免被外部濫用刷額度。"""
     text = (req.text or "").strip()
@@ -81,10 +83,8 @@ def synthesize_speech(req: TTSRequest, user: Model.User = Depends(get_current_us
 
     if result.reason == speechsdk.ResultReason.Canceled:
         detail = result.cancellation_details
-        raise HTTPException(
-            status_code=502,
-            detail=f"Azure 語音合成失敗: {detail.reason} {detail.error_details}",
-        )
+        logger.error("Azure 語音合成失敗: %s %s", detail.reason, detail.error_details)
+        raise HTTPException(status_code=502, detail="語音合成失敗，請稍後再試")
     if result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
         raise HTTPException(status_code=502, detail="Azure 語音合成未完成")
 

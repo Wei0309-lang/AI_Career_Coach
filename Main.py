@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
@@ -11,13 +11,20 @@ from docx import Document
 import Model
 from Database import engine
 from auth import get_db, get_current_user
+from rate_limit import rate_limited
 import os
 import io
 import json
+import hmac
+import logging
 from avatar import router as avatar_router
 from heygen import router as heygen_router
 from interview import router as interview_router
 from resume_utils import flatten_resume_value
+
+# 錯誤細節(例外內容、第三方 API 回應)只寫進伺服器 log(Render → Logs)，不回傳給使用者
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 # 自動建立資料表
@@ -30,6 +37,8 @@ gemini_client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "my-career-coach")
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+# /api/reset-db 會刪光所有資料，平常一律關閉；需要重建 schema 時才在環境變數暫時設為 1
+ALLOW_DB_RESET = os.getenv("ALLOW_DB_RESET", "0") == "1"
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 MAX_RESUME_UPLOAD_MB = int(os.getenv("MAX_RESUME_UPLOAD_MB", "10"))
@@ -65,19 +74,27 @@ class ResumeData(BaseModel):
         return flatten_resume_value(v)
 
 
-# 「重置資料庫」的 API (用來解決舊欄位衝突)
-# 需在 query string 帶上 secret=<ADMIN_SECRET> 才能執行，防止公開網路任意呼叫
-@app.get("/api/reset-db")
-def reset_database(secret: str = ""):
-    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+# 「重置資料庫」的 API (用來解決舊欄位衝突，會刪光所有資料)
+# 三道防護：
+#   1. 環境變數 ALLOW_DB_RESET=1 才存在，否則一律 404(平常就關著，用完記得關回去)
+#   2. 只接受 POST，瀏覽器網址列、爬蟲、連結預覽都不會誤觸
+#   3. secret 放在 X-Admin-Secret header，不放網址(網址會被記進各種存取 log)
+# 用法：curl -X POST https://<後端網址>/api/reset-db -H "X-Admin-Secret: <ADMIN_SECRET>"
+@app.post("/api/reset-db")
+def reset_database(x_admin_secret: str = Header("")):
+    if not ALLOW_DB_RESET:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not ADMIN_SECRET or not hmac.compare_digest(x_admin_secret.encode(), ADMIN_SECRET.encode()):
         raise HTTPException(status_code=403, detail="禁止存取：缺少或錯誤的 secret")
     try:
         # 這會強制刪除舊有的資料表，並依照最新的 Model.py 重新建立完整欄位
         Model.Base.metadata.drop_all(bind=engine)
         Model.Base.metadata.create_all(bind=engine)
+        logger.warning("資料庫已透過 /api/reset-db 重置")
         return {"message": "✅ 資料庫已成功重置更新！請回到前端重新註冊帳號。"}
-    except Exception as e:
-        return {"message": f"❌ 重置失敗: {str(e)}"}
+    except Exception:
+        logger.exception("資料庫重置失敗")
+        raise HTTPException(status_code=500, detail="資料庫重置失敗，詳細原因請查看伺服器 log")
 
 
 @app.get("/")
@@ -114,7 +131,7 @@ def _extract_text_from_docx(content: bytes) -> str:
 # 寫成 async def 會卡住 event loop，解析履歷的那幾秒內其他所有請求都得排隊；
 # 一般 def 會被 FastAPI 丟到 threadpool 執行，不影響其他請求
 @app.post("/api/resume/parse")
-def parse_resume_file(file: UploadFile = File(...), user: Model.User = Depends(get_current_user)):
+def parse_resume_file(file: UploadFile = File(...), user: Model.User = Depends(rate_limited("resume_parse"))):
     filename = (file.filename or "").lower()
     if filename.endswith(".pdf"):
         file_kind = "pdf"
@@ -171,8 +188,8 @@ fullName（姓名）、summary（個人簡介）、skills（專業技能）、ex
             if raw_json.lower().startswith("json"):
                 raw_json = raw_json.split("\n", 1)[1] if "\n" in raw_json else ""
         parsed = json.loads(raw_json)
-    except Exception as e:
-        print(f"履歷 AI 解析失敗: {e}")
+    except Exception:
+        logger.exception("履歷 AI 解析失敗")
         raise HTTPException(status_code=502, detail="AI 解析履歷內容失敗，請稍後再試")
 
     return {
@@ -185,7 +202,7 @@ fullName（姓名）、summary（個人簡介）、skills（專業技能）、ex
 
 # --- 履歷整合 API ---
 @app.post("/api/resume")
-def submit_resume(data: ResumeData, user: Model.User = Depends(get_current_user), db: Session = Depends(get_db)):
+def submit_resume(data: ResumeData, user: Model.User = Depends(rate_limited("resume_submit")), db: Session = Depends(get_db)):
     # 存入資料庫以供後續 AI 面試官參考
     user.full_name = data.fullName
     user.summary = data.summary
@@ -215,16 +232,17 @@ def submit_resume(data: ResumeData, user: Model.User = Depends(get_current_user)
             contents=prompt
         )
         suggestion = response.text
-    except Exception as e:
-        print(f"AI 呼叫失敗: {e}")
-        suggestion = f"AI 服務暫時無法使用，錯誤訊息: {e}"
+    except Exception:
+        # 履歷本身已經存檔成功，只是拿不到建議，所以仍回 200，但不把例外內容顯示給使用者
+        logger.exception("履歷健檢 AI 呼叫失敗")
+        suggestion = "✅ 履歷已儲存，但 AI 健檢服務暫時無法使用，請稍後再按一次取得建議。"
 
     return {"suggestion": suggestion}
 
 
 # --- AI 對話 API (嚴格面試官版 - 包含履歷內容與對話記憶) ---
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(rate_limited("legacy_chat")), db: Session = Depends(get_db)):
     user_message = request.message
     model_name = OLLAMA_MODEL
 
@@ -332,7 +350,7 @@ async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_cur
             db.commit() # 仍提交使用者端訊息
             return {"response": "系統錯誤：面試官連線異常。"}
 
-    except Exception as e:
+    except Exception:
         db.rollback() # 發生錯誤時回滾
-        print(f"❌ 發生錯誤: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {str(e)}")
+        logger.exception("/chat AI 呼叫失敗")
+        raise HTTPException(status_code=500, detail="AI 服務連線失敗，請稍後再試")

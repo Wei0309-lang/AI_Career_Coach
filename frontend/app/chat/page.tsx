@@ -36,6 +36,15 @@ async function authHeaders(): Promise<Record<string, string>> {
     };
 }
 
+// 後端失敗時回傳的 detail 已是給使用者看的中文訊息(例如 429「操作太頻繁，請約 N 秒後再試」)，
+// 有的話就顯示它，沒有才用預設文字
+class ApiError extends Error {}
+
+async function apiError(res: Response, fallback: string): Promise<ApiError> {
+    const body = await res.json().catch(() => ({}));
+    return new ApiError(typeof body.detail === "string" ? body.detail : fallback);
+}
+
 interface ChatContent {
     role: "user" | "Ai";
     content: string;
@@ -122,7 +131,7 @@ function ChatPageContent() {
                 headers: await authHeaders(),
                 body: JSON.stringify({ position, level }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw await apiError(res, "無法開始面試，請稍後再試一次。");
             const data = await res.json();
             setSessionId(data.session_id);
             setActiveSession(null); // 後端開新場次時已把舊的未結束場次標記為放棄
@@ -133,7 +142,7 @@ function ChatPageContent() {
             setStage("interview");
         } catch (e) {
             console.error("開始面試失敗:", e);
-            alert("無法開始面試,請確認後端服務正常後再試一次。");
+            alert(e instanceof ApiError ? e.message : "無法開始面試,請確認後端服務正常後再試一次。");
         } finally {
             setLoading(false);
         }
@@ -151,7 +160,7 @@ function ChatPageContent() {
                 headers: await authHeaders(),
                 body: JSON.stringify({ session_id: sessionId, message: text }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw await apiError(res, "面試官暫時忙線中，請稍後再試一次。");
             const data = await res.json();
             setChatContents(prev => [...prev, { role: "Ai", content: data.response }]);
             if (AVATAR_3D_ENABLED) {
@@ -161,7 +170,10 @@ function ChatPageContent() {
             console.error("連線錯誤:", error);
             setChatContents(prev => [
                 ...prev,
-                { role: "Ai", content: "面試官暫時忙線中，請稍後再試一次。" },
+                {
+                    role: "Ai",
+                    content: error instanceof ApiError ? `（系統訊息）${error.message}` : "面試官暫時忙線中，請稍後再試一次。",
+                },
             ]);
         } finally {
             setLoading(false);
