@@ -10,7 +10,7 @@ import InputBox from "./InputBox";
 import ChatBody from "./chatBody"; // 注意：請確認您的檔案名稱大小寫是否正確
 import Container from 'react-bootstrap/Container';
 import AuthGuard from "../components/AuthGuard";
-import { supabase } from "../lib/supabaseClient";
+import { BACKEND_URL, authHeaders, ApiError, apiError } from "../lib/api";
 import type { AvatarMessage } from "./Avatar3D";
 
 const Avatar3D = dynamic(() => import("./Avatar3D"), { ssr: false });
@@ -18,32 +18,9 @@ const HeyGenAvatar = dynamic(() => import("./HeyGenAvatar"), { ssr: false });
 
 const AVATAR_MODE = process.env.NEXT_PUBLIC_AVATAR_MODE; // "3d" | "heygen" | undefined
 const AVATAR_3D_ENABLED = AVATAR_MODE === "3d";
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 const POSITIONS = ["前端工程師", "後端工程師", "資安工程師", "全端工程師"];
 const LEVELS = ["實習生", "新鮮人", "資深工程師"];
-
-// 每次呼叫受保護的後端 API 前，即時取用 Supabase session 的 JWT，
-// 不再依賴 sessionStorage 裡的 user_id（後端一律以 JWT 驗證身份）
-async function authHeaders(): Promise<Record<string, string>> {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        throw new Error("尚未登入");
-    }
-    return {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session.access_token}`,
-    };
-}
-
-// 後端失敗時回傳的 detail 已是給使用者看的中文訊息(例如 429「操作太頻繁，請約 N 秒後再試」)，
-// 有的話就顯示它，沒有才用預設文字
-class ApiError extends Error {}
-
-async function apiError(res: Response, fallback: string): Promise<ApiError> {
-    const body = await res.json().catch(() => ({}));
-    return new ApiError(typeof body.detail === "string" ? body.detail : fallback);
-}
 
 interface ChatContent {
     role: "user" | "Ai";
@@ -128,7 +105,7 @@ function ChatPageContent() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/interview/start`, {
                 method: "POST",
-                headers: await authHeaders(),
+                headers: await authHeaders(true),
                 body: JSON.stringify({ position, level }),
             });
             if (!res.ok) throw await apiError(res, "無法開始面試，請稍後再試一次。");
@@ -157,7 +134,7 @@ function ChatPageContent() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/interview/chat`, {
                 method: "POST",
-                headers: await authHeaders(),
+                headers: await authHeaders(true),
                 body: JSON.stringify({ session_id: sessionId, message: text }),
             });
             if (!res.ok) throw await apiError(res, "面試官暫時忙線中，請稍後再試一次。");
@@ -187,7 +164,7 @@ function ChatPageContent() {
         try {
             const res = await fetch(`${BACKEND_URL}/api/interview/finish`, {
                 method: "POST",
-                headers: await authHeaders(),
+                headers: await authHeaders(true),
                 body: JSON.stringify({ session_id: sessionId }),
             });
             const data = await res.json();

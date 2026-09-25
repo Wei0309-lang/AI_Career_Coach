@@ -7,9 +7,7 @@
 // 使用者直接對著它「講話」互動,不走我們自己的 /chat 文字流程。
 
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+import { BACKEND_URL, authHeaders, apiError } from "../lib/api";
 
 export default function HeyGenAvatar() {
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
@@ -20,25 +18,19 @@ export default function HeyGenAvatar() {
     let cancelled = false;
     (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("尚未登入");
-
         const res = await fetch(`${BACKEND_URL}/heygen/embed`, {
           method: "POST",
-          headers: { "Authorization": `Bearer ${session.access_token}` },
+          headers: await authHeaders(),
         });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.detail || `HTTP ${res.status}`);
-        }
+        if (!res.ok) throw await apiError(res, `HTTP ${res.status}`);
         const data = await res.json();
         if (!cancelled) {
           setEmbedUrl(data.url);
           setSandbox(!!data.sandbox);
         }
-      } catch (e: any) {
+      } catch (e) {
         console.error("❌ 取得 LiveAvatar embed 失敗:", e);
-        if (!cancelled) setError(e.message || "未知錯誤");
+        if (!cancelled) setError(e instanceof Error && e.message ? e.message : "未知錯誤");
       }
     })();
     return () => {

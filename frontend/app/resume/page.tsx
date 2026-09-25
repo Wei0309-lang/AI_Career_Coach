@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Container from "react-bootstrap/Container";
 import AuthGuard from "../components/AuthGuard";
-import { supabase } from "../lib/supabaseClient";
+import { BACKEND_URL, authHeaders } from "../lib/api";
 
 const MAX_UPLOAD_SIZE_MB = 10;
 
@@ -46,12 +46,8 @@ function ResumePageContent() {
   // 向後端 API 撈取歷史資料的函式
   const fetchExistingResume = async () => {
     try {
-      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
       const response = await fetch(`${BACKEND_URL}/api/resume`, {
-        headers: { "Authorization": `Bearer ${session.access_token}` },
+        headers: await authHeaders(),
       });
 
       if (response.ok) {
@@ -102,19 +98,12 @@ function ResumePageContent() {
     setParsing(true);
 
     try {
-      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error("尚未登入");
-      }
-
       const body = new FormData();
       body.append("file", file);
 
       const response = await fetch(`${BACKEND_URL}/api/resume/parse`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${session.access_token}` },
+        headers: await authHeaders(), // 上傳檔案不帶 Content-Type，讓瀏覽器自動附上 multipart boundary
         body,
       });
 
@@ -144,19 +133,9 @@ function ResumePageContent() {
     setSuggestion("");
 
     try {
-      const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error("尚未登入");
-      }
-
       const response = await fetch(`${BACKEND_URL}/api/resume`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
+        headers: await authHeaders(true),
         body: JSON.stringify(formData),
       });
 

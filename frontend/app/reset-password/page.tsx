@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import { translateAuthError } from "../lib/authErrors";
@@ -9,25 +9,35 @@ import { translateAuthError } from "../lib/authErrors";
 // 不再讓使用者永遠卡在轉圈圈畫面
 const RECOVERY_TIMEOUT_MS = 8000;
 
+// 連結無效/過期時，Supabase 會把錯誤原因帶在 URL hash 上（例如
+// #error=access_denied&error_code=otp_expired&error_description=...），
+// 而不是觸發任何 session 事件，因此要主動解析、不能只等 onAuthStateChange。
+// 用 useSyncExternalStore 讀取：伺服器端預先渲染時沒有 URL(回傳空字串)，瀏覽器端再讀真正的 hash，
+// 不會在 effect 裡同步 setState，也不會造成 hydration 不一致。
+// (supabase-js 遇到錯誤參數時不會清掉 hash，只有換到 session 成功後才會清)
+function subscribeToHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function readHashLinkError(): string {
+  const errorDescription = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("error_description");
+  return errorDescription ? decodeURIComponent(errorDescription.replace(/\+/g, " ")) : "";
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [linkError, setLinkError] = useState("");
+  const hashLinkError = useSyncExternalStore(subscribeToHash, readHashLinkError, () => "");
+  const [timeoutLinkError, setTimeoutLinkError] = useState("");
+  const linkError = hashLinkError || timeoutLinkError;
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // 連結無效/過期時，Supabase 會把錯誤原因帶在 URL hash 上（例如
-    // #error=access_denied&error_code=otp_expired&error_description=...），
-    // 而不是觸發任何 session 事件，因此要主動解析、不能只等 onAuthStateChange
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const errorDescription = hashParams.get("error_description");
-    if (errorDescription) {
-      setLinkError(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
-      return;
-    }
+    if (hashLinkError) return;
 
     let settled = false;
 
@@ -49,7 +59,7 @@ export default function ResetPasswordPage() {
     // 純粹讓頁面停在讀取中，超時就主動改判為連結失效
     const timeout = window.setTimeout(() => {
       if (!settled) {
-        setLinkError("重設密碼連結無效或已過期，請重新申請一次。");
+        setTimeoutLinkError("重設密碼連結無效或已過期，請重新申請一次。");
       }
     }, RECOVERY_TIMEOUT_MS);
 
@@ -57,7 +67,7 @@ export default function ResetPasswordPage() {
       subscription.unsubscribe();
       window.clearTimeout(timeout);
     };
-  }, []);
+  }, [hashLinkError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

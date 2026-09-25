@@ -5,18 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Container from "react-bootstrap/Container";
 import AuthGuard from "../components/AuthGuard";
-import { supabase } from "../lib/supabaseClient";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-
-// 每次呼叫受保護的後端 API 前，即時取用 Supabase session 的 JWT
-async function authHeaders(): Promise<Record<string, string>> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    throw new Error("尚未登入");
-  }
-  return { "Authorization": `Bearer ${session.access_token}` };
-}
+import { BACKEND_URL, authHeaders } from "../lib/api";
 
 interface SessionSummary {
   session_id: string;

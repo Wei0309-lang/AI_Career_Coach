@@ -16,16 +16,36 @@ interface Props {
   onResult: (text: string) => void; // 辨識完成的文字(每句話回傳一次)
 }
 
+// TypeScript 內建的 DOM 型別只有辨識結果(SpeechRecognitionResultList)，沒有 SpeechRecognition 本身
+// (各瀏覽器實作仍不一致)，這裡只宣告本元件用到的部分
+interface SpeechRecognitionLike {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: { results: SpeechRecognitionResultList }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type WindowWithSpeech = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
 export default function VoiceInputButton({ onResult }: Props) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   useEffect(() => {
     // Chrome 是 webkitSpeechRecognition,標準名稱是 SpeechRecognition
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    const speechWindow = window as WindowWithSpeech;
+    const SR = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SR) return; // 瀏覽器不支援 → 按鈕不顯示
 
     const recognition = new SR();
@@ -33,14 +53,14 @@ export default function VoiceInputButton({ onResult }: Props) {
     recognition.continuous = false;      // 講完一句自動停止
     recognition.interimResults = false;  // 只回傳最終結果,避免文字跳動
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event) => {
       const transcript = Array.from(event.results)
-        .map((r: any) => r[0].transcript)
+        .map((r) => r[0].transcript)
         .join("");
       if (transcript) onResult(transcript);
     };
     recognition.onend = () => setListening(false);
-    recognition.onerror = (e: any) => {
+    recognition.onerror = (e) => {
       console.error("語音辨識錯誤:", e.error);
       setListening(false);
     };

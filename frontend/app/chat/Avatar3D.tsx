@@ -11,7 +11,8 @@
 // 依賴:npm install three @met4citizen/talkinghead
 
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import type { TalkingHead } from "talkinghead";
+import { BACKEND_URL, authHeaders } from "../lib/api";
 
 // Ready Player Me 模型網址。querystring 的 morphTargets 參數是關鍵:
 // 沒有 Oculus Visemes 這組 blendshape,嘴巴就動不了。
@@ -22,8 +23,6 @@ const AVATAR_URL =
   "https://models.readyplayer.me/64bfa15f0e72c63d7c3934a6.glb" +
     "?morphTargets=ARKit,Oculus+Visemes,mouthOpen,mouthSmile,eyesClosed,eyesLookUp,eyesLookDown" +
     "&textureSizeLimit=1024&textureFormat=png";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 // Azure viseme ID(0-21)→ TalkingHead 使用的 Oculus viseme 名稱對照表
 const AZURE_TO_OCULUS: string[] = [
@@ -45,7 +44,7 @@ interface Props {
 
 export default function Avatar3D({ message }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const headRef = useRef<any>(null);
+  const headRef = useRef<TalkingHead | null>(null);
   const lastSpokenId = useRef<number>(0);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading"
@@ -83,7 +82,6 @@ export default function Avatar3D({ message }: Props) {
 
         if (disposed) return;
         headRef.current = head;
-        (window as any).__head = head;   // 🆕 debug 用,之後可移除
         setStatus("ready");
       } catch (err) {
         console.error("❌ 3D 虛擬人初始化失敗:", err);
@@ -106,7 +104,6 @@ export default function Avatar3D({ message }: Props) {
     if (message.id === lastSpokenId.current) return; // 避免重複播放
     lastSpokenId.current = message.id;
     speak(message.text);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [message, status]);
 
   const speak = async (text: string) => {
@@ -121,15 +118,9 @@ export default function Avatar3D({ message }: Props) {
       await head.audioCtx?.resume?.();
 
       // 1️⃣ 向後端取得語音 + 嘴型時間軸(需帶登入憑證，後端據此驗證身份)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("尚未登入");
-
       const res = await fetch(`${BACKEND_URL}/avatar/tts`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
+        headers: await authHeaders(true),
         body: JSON.stringify({ text }),
       });
       if (!res.ok) throw new Error(`TTS API 錯誤: ${res.status}`);
