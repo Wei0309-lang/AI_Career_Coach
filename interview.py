@@ -119,6 +119,13 @@ def start_interview(
     if req.position not in VALID_POSITIONS or req.level not in VALID_LEVELS:
         raise HTTPException(status_code=400, detail="無效的職位或級別")
 
+    # 同一時間只保留一場進行中的面試：開新場次時，把之前沒按「結束」就離開的場次標記為放棄，
+    # 否則這些場次會永遠停在 active，/active 也無法判斷該接回哪一場
+    db.query(Model.InterviewSession).filter(
+        Model.InterviewSession.user_id == user.id,
+        Model.InterviewSession.status == "active",
+    ).update({"status": "abandoned"}, synchronize_session=False)
+
     session = Model.InterviewSession(
         user_id=user.id, position=req.position, level=req.level
     )
@@ -334,6 +341,15 @@ def finish_interview(
     if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="面試場次不存在")
 
+    if session.status == "finished":
+        existing = load_report(session.report_json)
+        if existing:
+            # 重複按「結束面試」或網路重送時直接回傳原本的報告，
+            # 不重新呼叫 AI(浪費額度，而且會用另一份分數覆蓋掉原本的評分)
+            return {"report": existing}
+    elif session.status != "active":
+        raise HTTPException(status_code=400, detail="此面試已結束")
+
     history = db.query(Model.ChatMessage).filter(
         Model.ChatMessage.session_id == req.session_id
     ).order_by(Model.ChatMessage.created_at.asc()).all()
@@ -402,6 +418,34 @@ def interview_history(
             "summary": report.get("summary", ""),
         })
     return {"sessions": result}
+
+
+# ---------- 進行中的場次(重新整理頁面後接回面試) ----------
+@router.get("/active")
+def active_interview(
+    user: Model.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    session = db.query(Model.InterviewSession).filter(
+        Model.InterviewSession.user_id == user.id,
+        Model.InterviewSession.status == "active",
+    ).order_by(Model.InterviewSession.created_at.desc()).first()
+    if not session:
+        return {"session": None}
+
+    messages = db.query(Model.ChatMessage).filter(
+        Model.ChatMessage.session_id == session.id
+    ).order_by(Model.ChatMessage.created_at.asc()).all()
+
+    return {
+        "session": {
+            "session_id": session.id,
+            "position": session.position,
+            "level": session.level,
+            "date": format_local_time(session.created_at),
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+        }
+    }
 
 # ---------- 單場詳細報告與逐字稿 ----------
 @router.get("/detail/{session_id}")

@@ -110,8 +110,11 @@ def _extract_text_from_docx(content: bytes) -> str:
 
 
 # --- 履歷檔案上傳解析 API（PDF / Word，解析完即丟棄檔案本體，不做任何儲存）---
+# 用一般 def 而非 async def：PDF/Word 解析與 Gemini 呼叫都是同步阻塞的，
+# 寫成 async def 會卡住 event loop，解析履歷的那幾秒內其他所有請求都得排隊；
+# 一般 def 會被 FastAPI 丟到 threadpool 執行，不影響其他請求
 @app.post("/api/resume/parse")
-async def parse_resume_file(file: UploadFile = File(...), user: Model.User = Depends(get_current_user)):
+def parse_resume_file(file: UploadFile = File(...), user: Model.User = Depends(get_current_user)):
     filename = (file.filename or "").lower()
     if filename.endswith(".pdf"):
         file_kind = "pdf"
@@ -120,9 +123,15 @@ async def parse_resume_file(file: UploadFile = File(...), user: Model.User = Dep
     else:
         raise HTTPException(status_code=400, detail="僅支援 PDF 或 Word(.docx) 檔案")
 
-    content = await file.read()
-    if len(content) > MAX_RESUME_UPLOAD_MB * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"檔案大小超過 {MAX_RESUME_UPLOAD_MB}MB 上限")
+    max_bytes = MAX_RESUME_UPLOAD_MB * 1024 * 1024
+    size_error = HTTPException(status_code=400, detail=f"檔案大小超過 {MAX_RESUME_UPLOAD_MB}MB 上限")
+    # 大檔案在 multipart 解析時已暫存到磁碟，先看大小就擋，不把整個檔案讀進記憶體
+    if file.size is not None and file.size > max_bytes:
+        raise size_error
+    # 保底：拿不到大小時最多只讀上限 + 1 byte，超過就判定過大
+    content = file.file.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise size_error
 
     try:
         if file_kind == "pdf":
@@ -276,7 +285,8 @@ async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_cur
                 ("面試者：" if m["role"] == "user" else "面試官：") + m["content"]
                 for m in messages_payload[1:]
             )
-            g = gemini_client.models.generate_content(
+            # 這個端點是 async def，要用非同步的 client.aio，否則等 Gemini 回覆時會卡住整個 event loop
+            g = await gemini_client.aio.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=system_prompt
                 + "\n\n以下是目前的對話，請以面試官身分回覆最後一則，只輸出面試官要說的話：\n"

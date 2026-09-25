@@ -8,9 +8,11 @@ import VoiceInputButton from "./VoiceInputButton";
 
 interface InputBoxProps {
   onSend: (message: string) => void;
+  // 面試官回覆中時不能送出(避免連送造成重複請求與訊息順序錯亂)，但仍可先打字
+  disabled?: boolean;
 }
 
-export default function InputBox({ onSend }: InputBoxProps) {
+export default function InputBox({ onSend, disabled = false }: InputBoxProps) {
   const [input, setInput] = useState("");
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -25,7 +27,7 @@ export default function InputBox({ onSend }: InputBoxProps) {
   }
 
   const handleSend = () => {
-    if (input.trim() === "") {
+    if (disabled || input.trim() === "") {
       return;
     }
     if (onSend && input.trim() !== "") {
@@ -48,7 +50,7 @@ export default function InputBox({ onSend }: InputBoxProps) {
 
         <Form.Control
           type="text"
-          placeholder="輸入您的訊息，或按左側麥克風用說的..."
+          placeholder={disabled ? "面試官回覆中，您可以先輸入下一段回答..." : "輸入您的訊息，或按左側麥克風用說的..."}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -61,7 +63,7 @@ export default function InputBox({ onSend }: InputBoxProps) {
           className="btn-studio rounded-pill px-4 flex-shrink-0"
           style={{ height: '50px' }}
           onClick={handleSend}
-          disabled={!input.trim()}
+          disabled={disabled || !input.trim()}
         >
           送出
         </Button>

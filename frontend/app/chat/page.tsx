@@ -3,7 +3,7 @@
 // 流程:setup(選職位/難度)→ interview(對話,3D 虛擬人開口)→ report(AI 評估報告)
 // HeyGen 模式不走場次流程(iframe 自帶對話),維持原本行為。
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import InputBox from "./InputBox";
@@ -53,6 +53,15 @@ interface Report {
     summary: string;
 }
 
+// 尚未按「結束」的場次(例如面試到一半重新整理頁面)，由 /api/interview/active 取得
+interface ActiveSession {
+    session_id: string;
+    position: string;
+    level: string;
+    date: string;
+    messages: { role: string; content: string }[];
+}
+
 function ChatPageContent() {
     const router = useRouter();
     const [chatContents, setChatContents] = useState<ChatContent[]>([]);
@@ -66,6 +75,42 @@ function ChatPageContent() {
     const [sessionId, setSessionId] = useState<string>("");
     const [report, setReport] = useState<Report | null>(null);
     const [finishing, setFinishing] = useState(false);
+    const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+
+    // 進入頁面時檢查是否有未結束的場次，有的話在設定畫面提供「繼續面試」
+    useEffect(() => {
+        if (AVATAR_MODE === "heygen") return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/interview/active`, {
+                    headers: await authHeaders(),
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled && data.session) setActiveSession(data.session);
+            } catch (e) {
+                console.error("讀取進行中的面試失敗:", e);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // 接回未結束的場次：還原對話紀錄，直接回到面試畫面
+    const handleResume = () => {
+        if (!activeSession) return;
+        setSessionId(activeSession.session_id);
+        setPosition(activeSession.position);
+        setLevel(activeSession.level);
+        setChatContents(activeSession.messages.map(m => ({
+            role: m.role === "user" ? "user" : "Ai",
+            content: m.content,
+        })));
+        setActiveSession(null);
+        setStage("interview");
+    };
 
     // 開始面試:建立場次,取得面試官開場白
     const handleStart = async () => {
@@ -80,6 +125,7 @@ function ChatPageContent() {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             setSessionId(data.session_id);
+            setActiveSession(null); // 後端開新場次時已把舊的未結束場次標記為放棄
             setChatContents([{ role: "Ai", content: data.opening }]);
             if (AVATAR_3D_ENABLED) {
                 setAvatarMsg({ id: Date.now(), text: data.opening });
@@ -95,6 +141,8 @@ function ChatPageContent() {
 
     // 場次內對話
     const handleSend = async (text: string) => {
+        // 上一則還在等面試官回覆、或正在產生報告時不接受新訊息
+        if (loading || finishing) return;
         setChatContents(prev => [...prev, { role: "user", content: text }]);
         setLoading(true);
         try {
@@ -196,7 +244,7 @@ function ChatPageContent() {
                             <button
                                 className="btn btn-studio-ghost btn-sm px-3"
                                 onClick={handleFinish}
-                                disabled={finishing}
+                                disabled={finishing || loading}
                             >
                                 {finishing ? "評估中..." : "結束面試並取得報告"}
                             </button>
@@ -209,6 +257,24 @@ function ChatPageContent() {
                     <div className="studio-panel p-4 p-md-5 mx-auto w-100" style={{ maxWidth: "640px" }}>
                         <h5 className="studio-title mb-1">設定本場面試</h5>
                         <p className="studio-dim small mb-4">面試官會根據目標職位與級別調整提問方向與評估標準</p>
+
+                        {activeSession && (
+                            <div
+                                className="mb-4 p-3 rounded-3"
+                                style={{ background: "rgba(108, 140, 255, 0.08)", border: "1px solid rgba(108, 140, 255, 0.3)" }}
+                            >
+                                <p className="small mb-1" style={{ color: "var(--studio-accent)", fontWeight: 700 }}>
+                                    您有一場尚未結束的面試
+                                </p>
+                                <p className="studio-dim small mb-3">
+                                    {activeSession.position}（{activeSession.level}）· 開始於 {activeSession.date}。
+                                    若直接開始新面試，這一場將視為放棄，不會產生報告。
+                                </p>
+                                <button className="btn btn-studio btn-sm px-4" onClick={handleResume}>
+                                    繼續這場面試
+                                </button>
+                            </div>
+                        )}
 
                         <p className="studio-dim small mb-2">目標職位</p>
                         <div className="d-flex flex-wrap gap-2 mb-4">
@@ -324,7 +390,7 @@ function ChatPageContent() {
 
             </Container>
 
-            {stage === "interview" && <InputBox onSend={handleSend} />}
+            {stage === "interview" && <InputBox onSend={handleSend} disabled={loading || finishing} />}
         </div>
     );
 }
