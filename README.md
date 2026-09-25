@@ -49,6 +49,8 @@ Next.js 前端  ──►  FastAPI 後端（JWT 驗證）  ──►  Gemini（�
    └── 擬真模式：內嵌 LiveAvatar 即時影像串流
 ```
 
+完整的**系統架構圖、後端模組圖、ERD、面試場次狀態圖、循序圖與 API 一覽**請見 [docs/architecture.md](docs/architecture.md)（Mermaid 格式，GitHub 會直接顯示成圖）。
+
 ---
 
 ## 專案結構
