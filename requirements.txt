@@ -10,6 +10,7 @@ google-genai
 requests==2.32.5
 httpx==0.28.1
 python-multipart
+python-dotenv==1.2.2
 pypdf==6.14.2
 python-docx==1.2.0
 azure-cognitiveservices-speech
