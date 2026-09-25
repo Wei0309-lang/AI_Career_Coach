@@ -1,5 +1,5 @@
 # auth.py — 共用的 Supabase JWT 驗證與 DB session 依賴
-# 抽出成獨立模組，讓 Main.py 與各功能路由(interview.py、resume_upload.py、
+# 抽出成獨立模組，讓 Main.py 與各功能路由(interview.py、
 # avatar.py、heygen.py)都能匯入 get_current_user，避免 Main.py 互相匯入造成循環匯入。
 
 import os

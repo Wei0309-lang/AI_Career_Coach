@@ -21,13 +21,11 @@ AI 驅動的職涯輔助平台，提供 **AI 模擬面試**（含 3D 虛擬面�
 1. **登入/註冊系統統一使用 Supabase Auth**（沿用 `Huang` 分支的做法，取代舊版自建 email+密碼系統）
    - 後端所有受保護端點一律透過驗證 Supabase 簽發的 JWT 取得使用者身份，**不再信任前端傳來的 `user_id` 字串**。
    - 新增「忘記密碼」功能（`/reset-password` 頁面）。
-2. **`avatar-local` 帶來的新功能路由（`avatar.py`／`heygen.py`／`interview.py`／`resume_upload.py`）已全數改為 JWT 驗證**
+2. **`avatar-local` 帶來的新功能路由（`avatar.py`／`heygen.py`／`interview.py`）已全數改為 JWT 驗證**
    - 這些模組原本在 `avatar-local` 分支上是直接信任 request 裡的 `user_id` 欄位（沒有任何身份驗證），整合時已全部改成 `Depends(get_current_user)`，從 `Authorization: Bearer <token>` 解出已驗證的使用者，避免任何人猜到他人 ID 就能操作其資料。
    - 前端對應呼叫也已全部改為附上 Supabase session 的 `access_token`，不再依賴 `sessionStorage` 裡的 `user_id`。
-3. **履歷上傳解析保留兩種實作**：
-   - `POST /api/resume/parse`（原 `Huang` 分支）：支援 PDF／Word，後端先抽取純文字再交給 Gemini 整理成欄位，檔案本體即時丟棄不儲存。
-   - `POST /api/resume/upload`（原 `avatar-local` 分支）：僅支援 PDF，直接把 PDF 位元組交給 Gemini 原生解析（對複雜排版可能效果更好）。
-   - 兩者皆已改為 JWT 驗證，使用哪一個由前端頁面決定。
+3. **履歷上傳解析統一使用 `POST /api/resume/parse`**（原 `Huang` 分支）：支援 PDF／Word，後端先抽取純文字再交給 Gemini 整理成欄位，檔案本體即時丟棄不儲存。
+   - 原 `avatar-local` 分支的 `POST /api/resume/upload`（僅支援 PDF、Gemini 原生解析）與前端 `ResumeUpload.tsx` 因功能重複且未被任何頁面使用，已移除。
 4. **資料庫本身沒有換**，仍是 Neon（生產）／SQLite（本地）。**注意：本次整合會清空正式環境資料庫重建 schema**（`users` 表拿掉密碼／驗證相關欄位、`id` 改為對應 Supabase UUID；新增 `interview_sessions` 表），既有測試資料不會被搬移。
 
 ---
@@ -62,7 +60,7 @@ Next.js 前端  ──►  FastAPI 後端（JWT 驗證）  ──►  Gemini（�
 ├── avatar.py          # Azure TTS 語音合成端點（提供 3D 模式音訊與 viseme）
 ├── heygen.py          # LiveAvatar 擬真虛擬人 embed 端點
 ├── interview.py       # 面試場次系統：開始／對話／結束報告／歷史紀錄
-└── resume_upload.py   # 履歷 PDF 上傳與 Gemini 原生解析
+└── resume_utils.py    # 履歷欄位共用工具（把 AI 回傳值攤平成純文字）
 
 前端（frontend/app/）
 ├── AuthPage/AuthPage.tsx    # 登入／註冊／忘記密碼（Supabase Auth）
@@ -259,7 +257,6 @@ ollama create my-career-coach -f Modelfile
 | `POST /api/resume` | body 需帶 `user_id` | body **不需要 `user_id`**，身份從 JWT 取得 |
 | `POST /chat` | body 需帶 `user_id` | body **不需要 `user_id`**，身份從 JWT 取得 |
 | `POST /api/resume/parse` | 沒有 | **新增**，上傳 PDF/Word 履歷檔案，身份從 JWT 取得 |
-| `POST /api/resume/upload` | 沒有 | **新增**，上傳 PDF 履歷檔案（Gemini 原生解析），身份從 JWT 取得 |
 | `POST /avatar/*` | 沒有 | **新增**，Azure TTS 語音合成，身份從 JWT 取得 |
 | `POST /heygen/*` | 沒有 | **新增**，LiveAvatar embed session，身份從 JWT 取得 |
 | `POST /interview/*` | 沒有 | **新增**，面試場次開始／對話／結束／歷史紀錄，身份從 JWT 取得 |

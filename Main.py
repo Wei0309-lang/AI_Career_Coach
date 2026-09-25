@@ -17,7 +17,6 @@ import json
 from avatar import router as avatar_router
 from heygen import router as heygen_router
 from interview import router as interview_router
-from resume_upload import router as resume_upload_router
 from resume_utils import flatten_resume_value
 
 
@@ -48,7 +47,6 @@ app.add_middleware(
 app.include_router(avatar_router)
 app.include_router(heygen_router)
 app.include_router(interview_router)
-app.include_router(resume_upload_router)
 
 class ChatRequest(BaseModel):
     message: str

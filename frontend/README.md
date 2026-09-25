@@ -52,7 +52,7 @@ Next.js 前端  ──►  FastAPI 後端  ──►  Gemini（產生面試官�
 ├── avatar.py          # Azure TTS 語音合成端點（提供 3D 模式音訊與 viseme）
 ├── heygen.py          # LiveAvatar 擬真虛擬人 embed 端點
 ├── interview.py       # 面試場次系統：開始／對話／結束報告／歷史紀錄
-└── resume_upload.py   # 履歷 PDF 上傳與 Gemini 解析
+└── resume_utils.py    # 履歷欄位共用工具（把 AI 回傳值攤平成純文字）
 
 前端（frontend/app/）
 ├── chat/
