@@ -60,7 +60,10 @@ Next.js 前端  ──►  FastAPI 後端（JWT 驗證）  ──►  Gemini（�
 ├── avatar.py          # Azure TTS 語音合成端點（提供 3D 模式音訊與 viseme）
 ├── heygen.py          # LiveAvatar 擬真虛擬人 embed 端點
 ├── interview.py       # 面試場次系統：開始／對話／結束報告／歷史紀錄
-└── resume_utils.py    # 履歷欄位共用工具（把 AI 回傳值攤平成純文字）
+├── auth.py            # Supabase JWT 驗證與本地使用者資料(get-or-create)
+├── rate_limit.py      # 依登入使用者限制 AI / 語音 / HeyGen 端點的呼叫頻率
+├── resume_utils.py    # 履歷欄位共用工具（把 AI 回傳值攤平成純文字）
+└── tests/             # pytest 自動化測試(全部離線、不耗 AI 額度，見「自動化測試」)
 
 前端（frontend/app/）
 ├── AuthPage/AuthPage.tsx    # 登入／註冊／忘記密碼（Supabase Auth）
@@ -228,6 +231,33 @@ ollama create my-career-coach -f Modelfile
 4. 與虛擬面試官進行對話（可用文字或語音）
 5. 結束面試，取得 AI 評估報告
 6. 於「面試歷史紀錄」回顧歷次評分與逐字稿
+
+---
+
+## 自動化測試
+
+後端有一套 pytest 測試（`tests/`），**全部離線執行**：資料庫用暫存 SQLite，Gemini／Ollama／Supabase／Azure／HeyGen 一律換成假的，**不會消耗任何 API 額度，也不會讀取你本機的 `.env`**，不需要先啟動前後端。
+
+```powershell
+# 第一次先安裝測試用套件（已在虛擬環境中）
+pip install -r requirements-dev.txt
+
+# 在 repo 根目錄執行全部測試（約 5～10 秒）
+python -m pytest
+
+# 只跑某一類，或顯示每個測試名稱
+python -m pytest tests/test_interview.py -v
+```
+
+| 檔案 | 涵蓋內容 |
+|---|---|
+| `tests/test_interview.py` | 面試開始／對話／結束報告、報告 JSON 解析與欄位補齊、接回未結束場次、放棄場次、歷史紀錄與台灣時間 |
+| `tests/test_resume.py` | 履歷讀取與儲存、PDF／Word 上傳解析（含表格、文字方塊、頁首頁尾）、檔案大小限制、AI 失敗時的處理 |
+| `tests/test_auth.py` | JWT 驗證、首次登入建立使用者、同 email 重新註冊、改 email 同步、新使用者併發請求 |
+| `tests/test_security.py` | 限流（429）、`/api/reset-db` 防護、錯誤訊息不外洩、CORS 放行／阻擋的來源 |
+| `tests/test_concurrency.py` | 起一個真的 uvicorn，確認解析履歷期間其他請求不會被卡住 |
+
+**修改後端程式後、推上 GitHub 前，建議先跑一次 `python -m pytest`。**
 
 ---
 
