@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 from ollama import AsyncClient
 from google import genai
+from google.genai import types
 from pypdf import PdfReader
 from docx import Document
+from docx.oxml.ns import qn
+from docx.text.paragraph import Paragraph
 import Model
 from Database import engine
 from auth import get_db, get_current_user
@@ -122,8 +125,29 @@ def _extract_text_from_pdf(content: bytes) -> str:
 
 
 def _extract_text_from_docx(content: bytes) -> str:
+    """抽出 Word 裡所有文字：內文、表格(含巢狀表格)、文字方塊、頁首與頁尾。
+    很多履歷範本整份內容都放在表格或文字方塊裡，只讀 document.paragraphs(只含內文最外層段落)
+    會幾乎抽不到字，Gemini 拿到殘缺內容常回說明文字而非 JSON，導致解析失敗。"""
     document = Document(io.BytesIO(content))
-    return "\n".join(p.text for p in document.paragraphs).strip()
+    containers = [document.element.body]
+    for section in document.sections:
+        for part in (section.header, section.first_page_header, section.even_page_header,
+                     section.footer, section.first_page_footer, section.even_page_footer):
+            # 沿用前一節的頁首頁尾沒有自己的內容；直接讀 _element 會替它新建一份空白定義
+            if not part.is_linked_to_previous:
+                containers.append(part._element)
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for container in containers:
+        # iter 會依文件順序走到所有層級的段落(表格儲存格、文字方塊裡的段落都是 w:p)
+        for p in container.iter(qn("w:p")):
+            text = Paragraph(p, document).text.strip()
+            # 文字方塊在 Word 檔裡常存兩份(新版格式 + 相容舊版的備援)，去除重複行
+            if text and text not in seen:
+                seen.add(text)
+                lines.append(text)
+    return "\n".join(lines)
 
 
 # --- 履歷檔案上傳解析 API（PDF / Word，解析完即丟棄檔案本體，不做任何儲存）---
@@ -180,14 +204,15 @@ fullName（姓名）、summary（個人簡介）、skills（專業技能）、ex
     try:
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=prompt
+            contents=prompt,
+            # 強制只輸出 JSON；不加的話，內容不完整時 Gemini 常改回一段說明文字而導致解析失敗
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
-        raw_json = response.text.strip()
-        if raw_json.startswith("```"):
-            raw_json = raw_json.strip("`")
-            if raw_json.lower().startswith("json"):
-                raw_json = raw_json.split("\n", 1)[1] if "\n" in raw_json else ""
-        parsed = json.loads(raw_json)
+        raw_json = (response.text or "").replace("```json", "").replace("```", "").strip()
+        start, end = raw_json.find("{"), raw_json.rfind("}")
+        parsed = json.loads(raw_json[start:end + 1] if start != -1 and end > start else raw_json)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"履歷解析結果不是 JSON 物件: {raw_json[:200]}")
     except Exception:
         logger.exception("履歷 AI 解析失敗")
         raise HTTPException(status_code=502, detail="AI 解析履歷內容失敗，請稍後再試")
