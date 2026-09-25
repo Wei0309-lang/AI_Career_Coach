@@ -10,17 +10,19 @@
 
 import json
 import os
-import uuid
-from datetime import datetime
+import re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy.orm import Session
 from google import genai
+from google.genai import types
 from ollama import Client as OllamaClient
 
 import Model
 from auth import get_db, get_current_user
+from resume_utils import flatten_resume_value
 
 router = APIRouter(prefix="/api/interview", tags=["interview"])
 
@@ -32,19 +34,42 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
 VALID_POSITIONS = ["前端工程師", "後端工程師", "資安工程師", "全端工程師"]
 VALID_LEVELS = ["實習生", "新鮮人", "資深工程師"]
 
+# 資料庫存的是 UTC(naive datetime),回傳給前端顯示前轉成台灣時間(UTC+8,台灣沒有日光節約)
+DISPLAY_TZ = timezone(timedelta(hours=8))
 
-def generate_ai_text(prompt: str) -> str:
+
+def format_local_time(dt: datetime | None) -> str:
+    if dt is None:
+        return ""
+    return dt.replace(tzinfo=timezone.utc).astimezone(DISPLAY_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def generate_ai_text(prompt: str, system: str | None = None, json_mode: bool = False) -> str:
     """依 USE_GEMINI_CHAT 決定用 Gemini 還是本地 Ollama 模型產生文字。
     預設(USE_GEMINI_CHAT 未設定或非 "1")走 Ollama,之後要換成自己訓練的模型，
-    改 OLLAMA_MODEL 指到新的 Modelfile 名稱即可，不需要再改這支程式。"""
+    改 OLLAMA_MODEL 指到新的 Modelfile 名稱即可，不需要再改這支程式。
+
+    system:明確指定 system prompt。對 Ollama 來說會取代 Modelfile 裡的 SYSTEM(面試官人設),
+            產生報告這類「不是扮演面試官」的任務要帶,避免模型繼續用面試官身分回話。
+    json_mode:要求模型只輸出合法 JSON(Ollama format="json"、Gemini application/json)。
+            本地 Llama 3 不開這個選項時,常常漏掉最後一個 "}" 導致報告解析失敗。"""
     if os.getenv("USE_GEMINI_CHAT", "0") == "1":
-        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json" if json_mode else None,
+        )
+        g = gemini_client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
         return (g.text or "").strip()
+
+    messages = [{"role": "user", "content": prompt}]
+    if system:
+        messages.insert(0, {"role": "system", "content": system})
 
     client = OllamaClient(host=OLLAMA_HOST)
     response = client.chat(
         model=OLLAMA_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
+        format="json" if json_mode else None,
         options={"temperature": 0.3, "num_predict": 1024, "top_k": 40, "top_p": 0.9},
     )
     if "message" in response and "content" in response["message"]:
@@ -140,10 +165,11 @@ def interview_chat(
     if session.status != "active":
         raise HTTPException(status_code=400, detail="此面試已結束")
 
-    # 場次內的歷史對話(最多取近 20 則,控制 token)
+    # 場次內「最近」20 則對話(控制 token):先倒序取 20 則再反轉回時間順序。
+    # 若直接正序 limit(20) 會拿到最舊的 20 則,面試超過 10 輪後面試官就看不到最近的回答
     history = db.query(Model.ChatMessage).filter(
         Model.ChatMessage.session_id == req.session_id
-    ).order_by(Model.ChatMessage.created_at.asc()).limit(20).all()
+    ).order_by(Model.ChatMessage.created_at.desc()).limit(20).all()[::-1]
 
     convo = "\n".join(
         ("面試者:" if m.role == "user" else "面試官:") + m.content for m in history
@@ -191,6 +217,110 @@ REPORT_SCHEMA_HINT = """{
   "summary": "三句話以內的總評"
 }"""
 
+REPORT_SYSTEM_PROMPT = "你是一位專業的技術面試評估顧問，只輸出 JSON，不輸出任何其他文字。"
+# 模型偶爾仍會輸出不合格式的內容，重試一次通常就會成功，不必讓使用者自己再按一次
+REPORT_MAX_ATTEMPTS = 2
+
+
+def _to_score(value, upper: int) -> int:
+    """把模型給的分數(8、"8"、8.5、"8/10" 等)轉成 0~upper 的整數;解析不出數字就給 0。"""
+    match = re.search(r"\d+(?:\.\d+)?", str(value)) if value is not None else None
+    if not match:
+        return 0
+    return max(0, min(upper, round(float(match.group()))))
+
+
+def _to_text_list(value) -> list[str]:
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else [value]
+    return [text for text in (flatten_resume_value(item) for item in items) if text]
+
+
+# 前端直接讀 report.dimensions.technical.score 等欄位，缺任何一層就會整頁崩潰，
+# 因此報告一律先經過這組 schema 補齊預設值、校正型別與分數範圍，再存檔或回傳
+class DimensionScore(BaseModel):
+    score: int = 0
+    comment: str = ""
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _coerce_score(cls, v):
+        return _to_score(v, 10)
+
+    @field_validator("comment", mode="before")
+    @classmethod
+    def _coerce_comment(cls, v):
+        return flatten_resume_value(v)
+
+
+class ReportDimensions(BaseModel):
+    technical: DimensionScore = Field(default_factory=DimensionScore)
+    communication: DimensionScore = Field(default_factory=DimensionScore)
+    problem_solving: DimensionScore = Field(default_factory=DimensionScore)
+
+    @field_validator("technical", "communication", "problem_solving", mode="before")
+    @classmethod
+    def _coerce_dimension(cls, v):
+        return v if isinstance(v, dict) else {}
+
+
+class InterviewReport(BaseModel):
+    overall_score: int = 0
+    dimensions: ReportDimensions = Field(default_factory=ReportDimensions)
+    strengths: list[str] = Field(default_factory=list)
+    improvements: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+    @field_validator("overall_score", mode="before")
+    @classmethod
+    def _coerce_overall(cls, v):
+        return _to_score(v, 100)
+
+    @field_validator("dimensions", mode="before")
+    @classmethod
+    def _coerce_dimensions(cls, v):
+        return v if isinstance(v, dict) else {}
+
+    @field_validator("strengths", "improvements", mode="before")
+    @classmethod
+    def _coerce_list(cls, v):
+        return _to_text_list(v)
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def _coerce_summary(cls, v):
+        return flatten_resume_value(v)
+
+
+def parse_report(raw: str) -> InterviewReport | None:
+    """從模型輸出中取出報告 JSON;格式不對或根本不像報告時回傳 None。"""
+    text = (raw or "").replace("```json", "").replace("```", "").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    # 連總分和各維度都沒有的 JSON(例如 {} 或模型自創的格式)不算報告，避免存下一份全 0 分的假報告
+    if not isinstance(data, dict) or not {"overall_score", "dimensions"} & data.keys():
+        return None
+    try:
+        return InterviewReport.model_validate(data)
+    except ValidationError:
+        return None
+
+
+def load_report(report_json: str | None) -> dict | None:
+    """讀取已存檔的報告並補齊欄位，讓修正前存下的舊報告也不會讓前端崩潰。"""
+    if not report_json:
+        return None
+    try:
+        return InterviewReport.model_validate(json.loads(report_json)).model_dump()
+    except (json.JSONDecodeError, ValidationError):
+        return None
+
 
 @router.post("/finish")
 def finish_interview(
@@ -226,22 +356,27 @@ def finish_interview(
 === 面試逐字稿 ===
 {transcript}
 """
-    try:
-        raw = generate_ai_text(prompt)
-        # 移除可能出現的 markdown 圍欄
-        raw = raw.replace("```json", "").replace("```", "").strip()
-        report = json.loads(raw)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="報告格式解析失敗,請再試一次")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
+    report = None
+    for attempt in range(1, REPORT_MAX_ATTEMPTS + 1):
+        try:
+            raw = generate_ai_text(prompt, system=REPORT_SYSTEM_PROMPT, json_mode=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI 服務連線失敗: {e}")
+        report = parse_report(raw)
+        if report:
+            break
+        print(f"報告格式解析失敗(第 {attempt} 次),模型原始輸出: {raw[:300]}")
 
+    if report is None:
+        raise HTTPException(status_code=502, detail="報告格式解析失敗,請再試一次")
+
+    report_data = report.model_dump()
     session.status = "finished"
     session.finished_at = datetime.utcnow()
-    session.report_json = json.dumps(report, ensure_ascii=False)
+    session.report_json = json.dumps(report_data, ensure_ascii=False)
     db.commit()
 
-    return {"report": report}
+    return {"report": report_data}
 
 
 # ---------- 歷史紀錄 ----------
@@ -257,12 +392,12 @@ def interview_history(
 
     result = []
     for s in sessions:
-        report = json.loads(s.report_json) if s.report_json else {}
+        report = load_report(s.report_json) or {}
         result.append({
             "session_id": s.id,
             "position": s.position,
             "level": s.level,
-            "date": s.created_at.strftime("%Y-%m-%d %H:%M"),
+            "date": format_local_time(s.created_at),
             "overall_score": report.get("overall_score"),
             "summary": report.get("summary", ""),
         })
@@ -288,8 +423,8 @@ def interview_detail(
     return {
         "position": session.position,
         "level": session.level,
-        "date": session.created_at.strftime("%Y-%m-%d %H:%M"),
-        "report": json.loads(session.report_json) if session.report_json else None,
+        "date": format_local_time(session.created_at),
+        "report": load_report(session.report_json),
         "transcript": [
             {"role": m.role, "content": m.content} for m in messages
         ],

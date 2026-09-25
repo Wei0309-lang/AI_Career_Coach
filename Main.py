@@ -244,10 +244,11 @@ async def chat_endpoint(request: ChatRequest, user: Model.User = Depends(get_cur
     """
 
     # 1️⃣ 從資料庫撈取最近 10 筆歷史訊息，建立持久對話記憶
+    #    (先倒序取 10 筆再反轉回時間順序；正序 limit 會拿到最舊的 10 筆)
     history_records = db.query(Model.ChatMessage)\
                         .filter(Model.ChatMessage.user_id == user.id)\
-                        .order_by(Model.ChatMessage.created_at.asc())\
-                        .limit(10).all()
+                        .order_by(Model.ChatMessage.created_at.desc())\
+                        .limit(10).all()[::-1]
 
     # 建立 Ollama 的訊息傳送矩陣
     messages_payload = [{"role": "system", "content": system_prompt}]
