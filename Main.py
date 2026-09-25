@@ -45,13 +45,18 @@ ALLOW_DB_RESET = os.getenv("ALLOW_DB_RESET", "0") == "1"
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 MAX_RESUME_UPLOAD_MB = int(os.getenv("MAX_RESUME_UPLOAD_MB", "10"))
+# 除了 ALLOWED_ORIGINS 列出的固定網址，再用 regex 放行本專案在 Vercel 上的網址：
+# 正式別名 ai-career-coach-gray-iota.vercel.app、各分支 Preview(ai-career-coach-git-<分支>-<帳號>.vercel.app)
+# 與每次部署的網址(ai-career-coach-<hash>-<帳號>.vercel.app)。
+# 原本是 https://.*\.vercel\.app，等於任何人部署在 Vercel 上的網站都能呼叫本後端。設為空字串可關閉 regex 放行
+ALLOWED_ORIGIN_REGEX = os.getenv("ALLOWED_ORIGIN_REGEX", r"https://ai-career-coach-[a-z0-9-]+\.vercel\.app")
 
-# 升級 CORS 設定，用 regex 包容所有 Vercel 分支與預覽網址
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app", # 允許任何 vercel.app 結尾的來源
-    allow_credentials=True,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX or None,
+    # 前端一律用 Authorization header 帶 Supabase JWT，不送 cookie，不需要開放跨站憑證
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
